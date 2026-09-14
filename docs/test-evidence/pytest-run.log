@@ -1,0 +1,98 @@
+=== docker compose run --rm test ===
+Executado em: 2026-09-14T00:48:48Z
+Commit: 43298e8da8d98cb0f398c568c64c526158ddada2
+
+ Container booking-concurrency-api-db-test-1 Running 
+ Container booking-concurrency-api-db-test-1 Waiting 
+ Container booking-concurrency-api-db-test-1 Healthy 
+ Container booking-concurrency-api-test-run-676ecf85dec5 Creating 
+ Container booking-concurrency-api-test-run-676ecf85dec5 Created 
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0 -- /usr/local/bin/python3.12
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pytest.ini
+plugins: anyio-4.15.1, cov-7.1.0
+collecting ... collected 69 items
+
+tests/concurrency/test_cancel_race.py::TestCancelIsNotRaceable::test_only_one_cancel_succeeds_for_the_same_booking PASSED [  1%]
+tests/concurrency/test_concurrent_different_resources.py::TestLockIsPerResourceNotGlobal::test_concurrent_bookings_on_different_resources_all_succeed PASSED [  2%]
+tests/concurrency/test_double_booking.py::TestDoubleBookingIsImpossible::test_only_one_booking_wins_for_same_slot PASSED [  4%]
+tests/concurrency/test_double_booking.py::TestDoubleBookingIsImpossible::test_repeated_runs_are_not_flaky PASSED [  5%]
+tests/concurrency/test_quota_race.py::TestRequesterQuotaIsNotRaceable::test_same_requester_cannot_exceed_quota_across_different_resources PASSED [  7%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_booking_returns_201 PASSED [  8%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_booking_for_unknown_resource_returns_404 PASSED [ 10%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_booking_with_end_before_start_returns_422 PASSED [ 11%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_booking_with_invalid_email_returns_422 PASSED [ 13%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_booking_overlapping_existing_returns_409 PASSED [ 14%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_booking_adjacent_to_existing_returns_201 PASSED [ 15%]
+tests/integration/test_api_bookings.py::TestCreateBooking::test_create_fourth_booking_for_same_requester_returns_409 PASSED [ 17%]
+tests/integration/test_api_bookings.py::TestGetBooking::test_get_unknown_booking_returns_404 PASSED [ 18%]
+tests/integration/test_api_bookings.py::TestCancelBooking::test_cancel_active_future_booking_returns_200 PASSED [ 20%]
+tests/integration/test_api_bookings.py::TestCancelBooking::test_cancel_unknown_booking_returns_404 PASSED [ 21%]
+tests/integration/test_api_bookings.py::TestCancelBooking::test_cancel_already_cancelled_booking_returns_409 PASSED [ 23%]
+tests/integration/test_api_bookings.py::TestCancelBooking::test_cancel_booking_that_already_started_returns_409 PASSED [ 24%]
+tests/integration/test_api_bookings.py::TestAvailability::test_available_when_no_bookings PASSED [ 26%]
+tests/integration/test_api_bookings.py::TestAvailability::test_unavailable_when_overlapping_booking_exists PASSED [ 27%]
+tests/integration/test_api_bookings.py::TestAvailability::test_availability_for_unknown_resource_returns_404 PASSED [ 28%]
+tests/integration/test_api_bookings.py::TestAvailability::test_availability_with_end_before_start_returns_422 PASSED [ 30%]
+tests/integration/test_api_bookings.py::TestAvailability::test_availability_for_a_past_window_is_allowed PASSED [ 31%]
+tests/integration/test_api_resources.py::TestCreateResource::test_create_resource_returns_201 PASSED [ 33%]
+tests/integration/test_api_resources.py::TestCreateResource::test_create_resource_with_zero_capacity_returns_422 PASSED [ 34%]
+tests/integration/test_api_resources.py::TestCreateResource::test_create_resource_with_negative_capacity_returns_422 PASSED [ 36%]
+tests/integration/test_api_resources.py::TestCreateResource::test_create_resource_with_duplicate_name_returns_201 PASSED [ 37%]
+tests/integration/test_api_resources.py::TestCreateResource::test_create_resource_without_location_is_allowed PASSED [ 39%]
+tests/integration/test_api_resources.py::TestGetResource::test_get_existing_resource PASSED [ 40%]
+tests/integration/test_api_resources.py::TestGetResource::test_get_unknown_resource_returns_404 PASSED [ 42%]
+tests/integration/test_api_resources.py::TestListResources::test_list_returns_created_resource PASSED [ 43%]
+tests/unit/test_booking_service.py::TestCreateBooking::test_creates_booking_for_existing_resource PASSED [ 44%]
+tests/unit/test_booking_service.py::TestCreateBooking::test_locks_requester_before_checking_quota PASSED [ 46%]
+tests/unit/test_booking_service.py::TestCreateBooking::test_raises_when_resource_does_not_exist PASSED [ 47%]
+tests/unit/test_booking_service.py::TestCreateBooking::test_raises_on_overlap_for_same_resource PASSED [ 49%]
+tests/unit/test_booking_service.py::TestCreateBooking::test_does_not_raise_on_overlap_for_different_resource PASSED [ 50%]
+tests/unit/test_booking_service.py::TestCreateBooking::test_raises_when_requester_quota_exceeded PASSED [ 52%]
+tests/unit/test_booking_service.py::TestCancelBooking::test_cancels_active_future_booking PASSED [ 53%]
+tests/unit/test_booking_service.py::TestCancelBooking::test_raises_for_unknown_booking PASSED [ 55%]
+tests/unit/test_booking_service.py::TestCheckAvailability::test_available_when_no_conflicts PASSED [ 56%]
+tests/unit/test_booking_service.py::TestCheckAvailability::test_unavailable_when_conflicting_booking_exists PASSED [ 57%]
+tests/unit/test_booking_service.py::TestCheckAvailability::test_raises_when_resource_does_not_exist PASSED [ 59%]
+tests/unit/test_rules.py::TestOverlaps::test_identical_windows_overlap PASSED [ 60%]
+tests/unit/test_rules.py::TestOverlaps::test_partial_overlap PASSED      [ 62%]
+tests/unit/test_rules.py::TestOverlaps::test_adjacent_windows_do_not_overlap PASSED [ 63%]
+tests/unit/test_rules.py::TestOverlaps::test_disjoint_windows_do_not_overlap PASSED [ 65%]
+tests/unit/test_rules.py::TestOverlaps::test_one_window_fully_contains_the_other PASSED [ 66%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_valid_window_does_not_raise PASSED [ 68%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_end_equal_to_start_is_invalid PASSED [ 69%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_end_before_start_is_invalid PASSED [ 71%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_naive_start_is_invalid PASSED [ 72%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_naive_end_is_invalid PASSED [ 73%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_start_in_the_past_is_invalid PASSED [ 75%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_start_exactly_now_is_valid PASSED [ 76%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_duration_shorter_than_minimum_is_invalid PASSED [ 78%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_duration_exactly_minimum_is_valid PASSED [ 79%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_duration_exactly_maximum_is_valid PASSED [ 81%]
+tests/unit/test_rules.py::TestValidateTimeWindow::test_duration_longer_than_maximum_is_invalid PASSED [ 82%]
+tests/unit/test_rules.py::TestValidateQueryWindow::test_valid_window_does_not_raise PASSED [ 84%]
+tests/unit/test_rules.py::TestValidateQueryWindow::test_end_before_start_is_invalid PASSED [ 85%]
+tests/unit/test_rules.py::TestValidateQueryWindow::test_naive_start_is_invalid PASSED [ 86%]
+tests/unit/test_rules.py::TestValidateQueryWindow::test_window_in_the_past_is_allowed PASSED [ 88%]
+tests/unit/test_rules.py::TestValidateQueryWindow::test_window_longer_than_max_booking_duration_is_allowed PASSED [ 89%]
+tests/unit/test_rules.py::TestCheckBookingQuota::test_below_limit_does_not_raise PASSED [ 91%]
+tests/unit/test_rules.py::TestCheckBookingQuota::test_at_limit_raises PASSED [ 92%]
+tests/unit/test_rules.py::TestCheckBookingQuota::test_above_limit_raises PASSED [ 94%]
+tests/unit/test_rules.py::TestEnsureCancellable::test_active_future_booking_is_cancellable PASSED [ 95%]
+tests/unit/test_rules.py::TestEnsureCancellable::test_already_cancelled_booking_raises PASSED [ 97%]
+tests/unit/test_rules.py::TestEnsureCancellable::test_booking_that_already_started_raises PASSED [ 98%]
+tests/unit/test_rules.py::TestEnsureCancellable::test_booking_starting_exactly_now_raises PASSED [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+../usr/local/lib/python3.12/site-packages/starlette/testclient.py:53
+  /usr/local/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 69 passed, 2 warnings in 0.64s ========================
