@@ -1,7 +1,12 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from uuid import UUID
 
 import pytest
+from sqlalchemy import func, select
+
+from booking_api.domain.entities import BookingStatus
+from booking_api.infra.models import BookingModel
 
 pytestmark = pytest.mark.concurrency
 
@@ -13,7 +18,7 @@ class TestLockIsPerResourceNotGlobal:
     writers per-resource, not globally — otherwise the system would not scale
     beyond a single resource under concurrent load."""
 
-    def test_concurrent_bookings_on_different_resources_all_succeed(self, client, future_slot):
+    def test_concurrent_bookings_on_different_resources_all_succeed(self, client, future_slot, db_session):
         resource_ids = []
         for i in range(RESOURCE_COUNT):
             res = client.post("/resources", json={"name": f"Sala {i}", "capacity": 4})
@@ -40,3 +45,13 @@ class TestLockIsPerResourceNotGlobal:
             results = list(pool.map(attempt, enumerate(resource_ids)))
 
         assert results.count(201) == RESOURCE_COUNT, f"expected all bookings to succeed, got: {results}"
+
+        active_in_db = db_session.scalar(
+            select(func.count())
+            .select_from(BookingModel)
+            .where(
+                BookingModel.resource_id.in_([UUID(rid) for rid in resource_ids]),
+                BookingModel.status == BookingStatus.ACTIVE.value,
+            )
+        )
+        assert active_in_db == RESOURCE_COUNT

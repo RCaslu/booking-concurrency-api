@@ -15,10 +15,14 @@ CONCURRENT_REQUESTS = 10
 
 class TestRequesterQuotaIsNotRaceable:
     """R7 (max active bookings per requester) is checked via a separate read
-    before the insert, not inside the same row lock create_active_booking uses
-    for R3 — without a requester-scoped lock, concurrent requests from the same
-    requester across different resources could all read a count below the limit
-    before any of them commits, silently exceeding the quota."""
+    before the insert, not inside the same per-resource row lock
+    create_active_booking uses for R3. BookingService.create_booking() closes
+    this with BookingRepository.lock_requester() - a transaction-scoped Postgres
+    advisory lock keyed by the requester's email - called before the count, so
+    concurrent requests from the same requester (even across different
+    resources) are serialized instead of all reading a count below the limit
+    before any of them commits. This test is the proof that lock actually
+    holds under real concurrent load."""
 
     def test_same_requester_cannot_exceed_quota_across_different_resources(self, client, future_slot, db_session):
         resource_ids = []

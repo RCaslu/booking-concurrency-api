@@ -1,7 +1,10 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from uuid import UUID
 
 import pytest
+
+from booking_api.infra.models import BookingModel
 
 pytestmark = pytest.mark.concurrency
 
@@ -13,7 +16,9 @@ class TestCancelIsNotRaceable:
     conditional WHERE clause, so two concurrent DELETE calls for the same
     booking could both succeed instead of the second getting 409."""
 
-    def test_only_one_cancel_succeeds_for_the_same_booking(self, client, resource_id, future_slot):
+    def test_only_one_cancel_succeeds_for_the_same_booking(
+        self, client, resource_id, future_slot, db_session
+    ):
         created = client.post(
             f"/resources/{resource_id}/bookings",
             json={
@@ -35,3 +40,7 @@ class TestCancelIsNotRaceable:
 
         assert results.count(200) == 1, f"expected exactly one 200, got: {results}"
         assert results.count(409) == CONCURRENT_REQUESTS - 1
+
+        final = db_session.get(BookingModel, UUID(booking_id))
+        assert final.status == "CANCELLED"
+        assert final.cancelled_at is not None
