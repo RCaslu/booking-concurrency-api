@@ -36,6 +36,15 @@ class BookingRepository(Protocol):
 
     def cancel(self, booking_id: UUID, cancelled_at: datetime) -> Booking: ...
 
+    def lock_requester(self, requester_email: str) -> None:
+        """Serializes concurrent callers for this requester (across any resource)
+        for the rest of the current transaction. Must be called before
+        count_active_for_requester() in create_booking() so the count-then-insert
+        quota check (R7) is atomic — without it, two concurrent requests from the
+        same requester can both read a count below the limit before either commits.
+        """
+        ...
+
     def count_active_for_requester(self, requester_email: str) -> int: ...
 
     def find_conflicts(self, resource_id: UUID, start_time: datetime, end_time: datetime) -> list[Booking]: ...

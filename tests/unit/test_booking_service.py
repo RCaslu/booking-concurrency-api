@@ -43,6 +43,10 @@ class FakeBookingRepository:
 
     def __init__(self) -> None:
         self._bookings: dict[UUID, Booking] = {}
+        self.call_order: list[str] = []
+
+    def lock_requester(self, requester_email: str) -> None:
+        self.call_order.append("lock_requester")
 
     def create_active_booking(
         self, resource_id: UUID, requester_email: str, start_time: datetime, end_time: datetime
@@ -87,6 +91,7 @@ class FakeBookingRepository:
         return cancelled
 
     def count_active_for_requester(self, requester_email: str) -> int:
+        self.call_order.append("count_active_for_requester")
         return sum(
             1
             for b in self._bookings.values()
@@ -137,6 +142,21 @@ class TestCreateBooking:
 
         assert booking.resource_id == resource.id
         assert booking.status == BookingStatus.ACTIVE
+
+    def test_locks_requester_before_checking_quota(
+        self, service: BookingService, booking_repo: FakeBookingRepository, resource: Resource
+    ):
+        """The quota check (R7) must happen while holding the requester lock,
+        otherwise concurrent requests from the same requester can race past it
+        (see infra.repositories.SqlAlchemyBookingRepository.lock_requester)."""
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+
+        service.create_booking(resource.id, "user@example.com", start, end)
+
+        assert booking_repo.call_order.index("lock_requester") < booking_repo.call_order.index(
+            "count_active_for_requester"
+        )
 
     def test_raises_when_resource_does_not_exist(self, service: BookingService):
         start = NOW + timedelta(hours=1)

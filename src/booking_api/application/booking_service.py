@@ -48,6 +48,7 @@ class BookingService:
         if self._resource_repo.get(resource_id) is None:
             raise ResourceNotFoundError(f"Resource {resource_id} not found.")
 
+        self._booking_repo.lock_requester(requester_email)
         active_count = self._booking_repo.count_active_for_requester(requester_email)
         check_booking_quota(active_count)
 
