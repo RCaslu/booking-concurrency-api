@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from booking_api.domain.entities import Booking, BookingStatus, Resource
-from booking_api.domain.exceptions import OverlappingBookingError
+from booking_api.domain.exceptions import BookingAlreadyCancelledError, OverlappingBookingError
 from booking_api.infra.models import BookingModel, ResourceModel
 
 
@@ -106,11 +106,21 @@ class SqlAlchemyBookingRepository:
         return _to_booking(model) if model else None
 
     def cancel(self, booking_id: UUID, cancelled_at: datetime) -> Booking:
-        model = self._session.get(BookingModel, booking_id)
-        model.status = BookingStatus.CANCELLED.value
-        model.cancelled_at = cancelled_at
-        self._session.commit()
-        self._session.refresh(model)
+        # A conditional UPDATE (not a read-then-write) so two concurrent cancel
+        # calls for the same booking can't both succeed: Postgres serializes
+        # concurrent UPDATEs on the same row, and only the first to commit
+        # matches status = 'ACTIVE' — the second gets rowcount == 0.
+        session = self._session
+        result = session.execute(
+            update(BookingModel)
+            .where(BookingModel.id == booking_id, BookingModel.status == BookingStatus.ACTIVE.value)
+            .values(status=BookingStatus.CANCELLED.value, cancelled_at=cancelled_at)
+        )
+        if result.rowcount == 0:
+            session.rollback()
+            raise BookingAlreadyCancelledError("Booking is already cancelled.")
+        session.commit()
+        model = session.get(BookingModel, booking_id)
         return _to_booking(model)
 
     def lock_requester(self, requester_email: str) -> None:

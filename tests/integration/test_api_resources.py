@@ -24,6 +24,16 @@ class TestCreateResource:
 
         assert response.status_code == 422
 
+    def test_create_resource_with_duplicate_name_returns_201(self, client):
+        """Resource names are not required to be unique (see spec RF1) — two
+        rooms named the same way is a legitimate scenario, not an error."""
+        first = client.post("/resources", json={"name": "Sala A", "capacity": 8})
+        second = client.post("/resources", json={"name": "Sala A", "capacity": 4})
+
+        assert first.status_code == 201
+        assert second.status_code == 201
+        assert first.json()["id"] != second.json()["id"]
+
     def test_create_resource_without_location_is_allowed(self, client):
         response = client.post("/resources", json={"name": "Sala A", "capacity": 8})
 
