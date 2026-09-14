@@ -14,3 +14,4 @@ htmlcov/
 !.env.example
 .DS_Store
 *.log
+!docs/test-evidence/*.log

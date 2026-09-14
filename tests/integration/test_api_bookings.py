@@ -168,3 +168,24 @@ class TestAvailability:
         )
 
         assert response.status_code == 404
+
+    def test_availability_with_end_before_start_returns_422(self, client, resource_id, future_slot):
+        response = client.get(
+            f"/resources/{resource_id}/availability",
+            params={"start": future_slot.end.isoformat(), "end": future_slot.start.isoformat()},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "INVALID_TIME_WINDOW"
+
+    def test_availability_for_a_past_window_is_allowed(self, client, resource_id):
+        past_start = "2020-01-01T10:00:00Z"
+        past_end = "2020-01-01T11:00:00Z"
+
+        response = client.get(
+            f"/resources/{resource_id}/availability",
+            params={"start": past_start, "end": past_end},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["is_available"] is True
