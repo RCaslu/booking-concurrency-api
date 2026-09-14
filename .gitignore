@@ -15,3 +15,5 @@ htmlcov/
 .DS_Store
 *.log
 !docs/test-evidence/*.log
+docs/entrega-1.pdf
+scripts/gerar_pdf_entrega.py
