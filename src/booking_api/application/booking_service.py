@@ -8,7 +8,12 @@ from uuid import UUID
 from booking_api.application.ports import BookingRepository, ResourceRepository
 from booking_api.domain.entities import Booking
 from booking_api.domain.exceptions import BookingNotFoundError, ResourceNotFoundError
-from booking_api.domain.rules import check_booking_quota, ensure_cancellable, validate_time_window
+from booking_api.domain.rules import (
+    check_booking_quota,
+    ensure_cancellable,
+    validate_query_window,
+    validate_time_window,
+)
 
 
 @dataclass(frozen=True)
@@ -64,6 +69,8 @@ class BookingService:
         return self._booking_repo.cancel(booking_id, cancelled_at=now)
 
     def check_availability(self, resource_id: UUID, start_time: datetime, end_time: datetime) -> AvailabilityResult:
+        validate_query_window(start_time, end_time)
+
         if self._resource_repo.get(resource_id) is None:
             raise ResourceNotFoundError(f"Resource {resource_id} not found.")
 

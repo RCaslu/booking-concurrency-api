@@ -17,6 +17,7 @@ from booking_api.domain.rules import (
     check_booking_quota,
     ensure_cancellable,
     overlaps,
+    validate_query_window,
     validate_time_window,
 )
 
@@ -136,6 +137,31 @@ class TestValidateTimeWindow:
         end = start + MAX_BOOKING_DURATION + timedelta(minutes=1)
         with pytest.raises(InvalidTimeWindowError):
             validate_time_window(start, end, NOW)
+
+
+class TestValidateQueryWindow:
+    """Used by availability queries — deliberately does not enforce R2 (not in
+    the past) or R6 (duration bounds), since a query may legitimately ask
+    about a past or arbitrarily long window."""
+
+    def test_valid_window_does_not_raise(self):
+        validate_query_window(NOW, NOW + timedelta(hours=1))
+
+    def test_end_before_start_is_invalid(self):
+        with pytest.raises(InvalidTimeWindowError):
+            validate_query_window(NOW + timedelta(hours=1), NOW)
+
+    def test_naive_start_is_invalid(self):
+        start = NOW.replace(tzinfo=None)
+        with pytest.raises(InvalidTimeWindowError):
+            validate_query_window(start, start + timedelta(hours=1))
+
+    def test_window_in_the_past_is_allowed(self):
+        start = NOW - timedelta(days=30)
+        validate_query_window(start, start + timedelta(hours=1))
+
+    def test_window_longer_than_max_booking_duration_is_allowed(self):
+        validate_query_window(NOW, NOW + timedelta(days=1))
 
 
 class TestCheckBookingQuota:
