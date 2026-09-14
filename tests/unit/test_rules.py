@@ -91,6 +91,20 @@ class TestValidateTimeWindow:
         with pytest.raises(InvalidTimeWindowError):
             validate_time_window(start, end, NOW)
 
+    def test_naive_start_is_invalid(self):
+        """A naive datetime must never reach the aware/naive comparison below —
+        it would raise an unhandled TypeError instead of a clean domain error."""
+        start = (NOW + timedelta(hours=1)).replace(tzinfo=None)
+        end = start + timedelta(hours=1)
+        with pytest.raises(InvalidTimeWindowError):
+            validate_time_window(start, end, NOW)
+
+    def test_naive_end_is_invalid(self):
+        start = NOW + timedelta(hours=1)
+        end = (start + timedelta(hours=1)).replace(tzinfo=None)
+        with pytest.raises(InvalidTimeWindowError):
+            validate_time_window(start, end, NOW)
+
     def test_start_in_the_past_is_invalid(self):
         start = NOW - timedelta(minutes=1)
         end = start + timedelta(hours=1)

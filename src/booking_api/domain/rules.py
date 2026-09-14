@@ -21,6 +21,8 @@ def overlaps(start_a: datetime, end_a: datetime, start_b: datetime, end_b: datet
 
 
 def validate_time_window(start: datetime, end: datetime, now: datetime) -> None:
+    if start.tzinfo is None or end.tzinfo is None:
+        raise InvalidTimeWindowError("start_time and end_time must be timezone-aware.")
     if end <= start:
         raise InvalidTimeWindowError("end_time must be strictly after start_time.")
     if start < now:
