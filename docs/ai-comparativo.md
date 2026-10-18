@@ -36,7 +36,7 @@ Branches publicadas com o resultado bruto de cada uma: [`experiment/claude-rf8`]
 
 ### Defeito compartilhado pelas duas
 
-As duas implementações verificam R4 ("a reserva ainda não começou") **antes** de tomar o lock, e o `UPDATE` não verifica de novo. Isso abre uma janela pequena de checagem-e-ação, o mesmo padrão dos erros E4 e E5 da Sprint 1 ([erros-e-reespecificacao.md](erros-e-reespecificacao.md)). Nenhuma das duas ferramentas percebeu sozinha. Foi achado pela skill `code-review` e corrigido no PR [#14](https://github.com/RCaslu/booking-concurrency-api/pull/14) (`UPDATE ... AND start_time > now`, com teste de regressão que falha sem a correção).
+As duas implementações verificam R4 ("a reserva ainda não começou") **antes** de tomar o lock, e o `UPDATE` não verifica de novo. Isso abre uma janela pequena de checagem-e-ação, o mesmo padrão dos erros E4 e E5 da Sprint 1 ([erros-e-reespecificacao.md](erros-e-reespecificacao.md)). Nenhuma das duas ferramentas percebeu sozinha. Foi achado pela skill `code-review` e corrigido no PR [#14](https://github.com/RCaslu/booking-concurrency-api/pull/14). A primeira correção também estava incompleta: usava um horário lido antes do lock. A versão final usa `start_time > clock_timestamp()` no próprio `UPDATE` (erro E10).
 
 ## Leitura qualitativa
 
