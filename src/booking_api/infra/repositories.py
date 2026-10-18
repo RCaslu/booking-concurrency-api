@@ -8,7 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from booking_api.domain.entities import Booking, BookingStatus, Resource
-from booking_api.domain.exceptions import BookingAlreadyCancelledError, OverlappingBookingError
+from booking_api.domain.exceptions import (
+    BookingAlreadyCancelledError,
+    BookingAlreadyStartedError,
+    OverlappingBookingError,
+)
 from booking_api.infra.models import BookingModel, ResourceModel
 
 
@@ -123,11 +127,9 @@ class SqlAlchemyBookingRepository:
         model = session.get(BookingModel, booking_id)
         return _to_booking(model)
 
-    def reschedule(self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
-        # Same lock as create_active_booking() so reschedules and creations on
-        # this resource serialize; the EXCLUDE constraint stays the final net.
-        # The UPDATE is conditional on ACTIVE, like cancel(), so a concurrent
-        # cancel that committed first makes this one fail instead of reviving it.
+    def reschedule(
+        self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime, now: datetime
+    ) -> Booking:
         session = self._session
         try:
             session.execute(
@@ -148,13 +150,20 @@ class SqlAlchemyBookingRepository:
 
             result = session.execute(
                 update(BookingModel)
-                .where(BookingModel.id == booking_id, BookingModel.status == BookingStatus.ACTIVE.value)
+                .where(
+                    BookingModel.id == booking_id,
+                    BookingModel.status == BookingStatus.ACTIVE.value,
+                    BookingModel.start_time > now,
+                )
                 .values(start_time=start_time, end_time=end_time)
             )
             if result.rowcount == 0:
-                raise BookingAlreadyCancelledError("Booking is already cancelled.")
+                status = session.scalar(select(BookingModel.status).where(BookingModel.id == booking_id))
+                if status == BookingStatus.CANCELLED.value:
+                    raise BookingAlreadyCancelledError("Booking is already cancelled.")
+                raise BookingAlreadyStartedError("Booking cannot be rescheduled after it has started.")
             session.commit()
-        except (OverlappingBookingError, BookingAlreadyCancelledError):
+        except (OverlappingBookingError, BookingAlreadyCancelledError, BookingAlreadyStartedError):
             session.rollback()
             raise
         except IntegrityError:

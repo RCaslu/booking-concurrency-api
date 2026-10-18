@@ -1,11 +1,14 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
 
 from booking_api.domain.entities import BookingStatus
+from booking_api.domain.exceptions import BookingAlreadyStartedError
+from booking_api.infra.repositories import SqlAlchemyBookingRepository
 from booking_api.infra.models import BookingModel
 
 pytestmark = pytest.mark.concurrency
@@ -36,9 +39,6 @@ def _active_overlapping(db_session, resource_id, start, end) -> int:
 
 
 class TestRescheduleIsNotRaceable:
-    """RF8: rescheduling must hold the same R3 guarantee as creation — the
-    reschedule takes the same resource lock, so neither concurrent reschedules
-    nor a reschedule racing creations can produce overlapping ACTIVE bookings."""
 
     def test_only_one_of_many_concurrent_reschedules_into_same_slot_wins(
         self, client, resource_id, future_slot, db_session
@@ -94,3 +94,43 @@ class TestRescheduleIsNotRaceable:
         assert len(winners) == 1, f"expected exactly one winner, got: {results}"
         assert sum(1 for r in results if r[1] == 409) == CONCURRENT_REQUESTS - 1
         assert _active_overlapping(db_session, resource_id, target_start, target_end) == 1
+
+    def test_reschedule_racing_cancel_never_moves_a_cancelled_booking(
+        self, client, resource_id, future_slot, db_session
+    ):
+        booking_id = _create(client, resource_id, "user@example.com", future_slot.start, future_slot.end)["id"]
+        target_start = future_slot.start + timedelta(days=5)
+        window = {"start_time": target_start.isoformat(), "end_time": (target_start + timedelta(hours=1)).isoformat()}
+        barrier = threading.Barrier(2)
+
+        def attempt(action: str) -> int:
+            barrier.wait()
+            if action == "cancel":
+                return client.delete(f"/bookings/{booking_id}").status_code
+            return client.patch(f"/bookings/{booking_id}", json=window).status_code
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            cancel_status, reschedule_status = pool.map(attempt, ["cancel", "reschedule"])
+
+        assert cancel_status == 200
+        assert reschedule_status in (200, 409)
+        final = db_session.get(BookingModel, UUID(booking_id))
+        assert final.status == BookingStatus.CANCELLED.value
+        expected_start = target_start if reschedule_status == 200 else future_slot.start
+        assert final.start_time == expected_start
+
+    def test_write_landing_after_start_is_rejected(self, client, resource_id, future_slot, db_session):
+        booking_id = UUID(_create(client, resource_id, "user@example.com", future_slot.start, future_slot.end)["id"])
+        target_start = future_slot.start + timedelta(days=5)
+
+        with pytest.raises(BookingAlreadyStartedError):
+            SqlAlchemyBookingRepository(db_session).reschedule(
+                booking_id,
+                UUID(resource_id),
+                target_start,
+                target_start + timedelta(hours=1),
+                now=future_slot.start + timedelta(seconds=1),
+            )
+
+        db_session.expire_all()
+        assert db_session.get(BookingModel, booking_id).start_time == future_slot.start

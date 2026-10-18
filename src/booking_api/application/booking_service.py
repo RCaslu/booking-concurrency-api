@@ -78,7 +78,7 @@ class BookingService:
             raise BookingNotFoundError(f"Booking {booking_id} not found.")
 
         ensure_reschedulable(booking, now)
-        return self._booking_repo.reschedule(booking_id, booking.resource_id, start_time, end_time)
+        return self._booking_repo.reschedule(booking_id, booking.resource_id, start_time, end_time, now)
 
     def check_availability(self, resource_id: UUID, start_time: datetime, end_time: datetime) -> AvailabilityResult:
         validate_query_window(start_time, end_time)

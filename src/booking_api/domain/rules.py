@@ -62,5 +62,4 @@ def ensure_cancellable(booking: Booking, now: datetime) -> None:
 
 
 def ensure_reschedulable(booking: Booking, now: datetime) -> None:
-    """Same precondition as cancellation (R4): only an ACTIVE booking that hasn't started."""
     _ensure_active_and_not_started(booking, now, "rescheduled")

@@ -8,6 +8,7 @@ from booking_api.application.booking_service import BookingService
 from booking_api.domain.entities import Booking, BookingStatus, Resource
 from booking_api.domain.exceptions import (
     BookingAlreadyCancelledError,
+    BookingAlreadyStartedError,
     BookingNotFoundError,
     InvalidTimeWindowError,
     BookingQuotaExceededError,
@@ -93,7 +94,9 @@ class FakeBookingRepository:
         self._bookings[booking_id] = cancelled
         return cancelled
 
-    def reschedule(self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+    def reschedule(
+        self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime, now: datetime
+    ) -> Booking:
         for existing in self._bookings.values():
             if (
                 existing.id != booking_id
@@ -271,6 +274,17 @@ class TestRescheduleBooking:
 
         with pytest.raises(BookingAlreadyCancelledError):
             service.reschedule_booking(booking.id, start, start + timedelta(hours=1))
+
+    def test_raises_for_booking_that_already_started(
+        self, service: BookingService, resource: Resource, resource_repo, booking_repo
+    ):
+        start = NOW + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, start + timedelta(hours=1))
+        later = BookingService(resource_repo, booking_repo, clock=lambda: start)
+
+        new_start = start + timedelta(hours=2)
+        with pytest.raises(BookingAlreadyStartedError):
+            later.reschedule_booking(booking.id, new_start, new_start + timedelta(hours=1))
 
     def test_raises_for_unknown_booking(self, service: BookingService):
         start = NOW + timedelta(hours=1)
