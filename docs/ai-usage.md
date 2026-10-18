@@ -1,6 +1,6 @@
 # Uso de agentes de IA no fluxo SDD
 
-Ferramenta usada: **Claude Code** (Anthropic), com contexto de projeto em `CLAUDE.md` (raiz do repositório).
+Ferramentas usadas: **Claude Code** (Anthropic), em todo o desenvolvimento, com contexto de projeto em `CLAUDE.md` (raiz do repositório). Na Sprint 2 também foi usado o **Cursor**, no experimento comparativo ([`ai-comparativo.md`](ai-comparativo.md)).
 
 ## Onde a IA foi usada
 
@@ -20,3 +20,9 @@ Ferramenta usada: **Claude Code** (Anthropic), com contexto de projeto em `CLAUD
 ## O que a IA não decidiu sozinha
 
 O domínio do problema (sistema de reservas com concorrência), a escolha de salas de reunião como recurso concreto, e a decisão de usar Postgres desde a Entrega 1 (em vez de uma alternativa mais simples) foram confirmados explicitamente antes da implementação começar — o agente apresentou opções com trade-offs, a decisão final foi humana.
+
+## Sprint 2 (Entrega 2)
+
+- **Experimento comparativo:** o RF8 (remarcação) foi implementado pelo Claude Code (sessão headless nova, com ferramentas limitadas por allowlist) e pelo Cursor, a partir do mesmo prompt e do mesmo commit, em worktrees isolados. A implementação do Claude Code foi escolhida, com a justificativa em [`ai-comparativo.md`](ai-comparativo.md).
+- **Revisão de IA no PR #14:** a skill `code-review` achou que R4 era verificado fora da seção crítica (as duas ferramentas deixaram passar) e que o spec afirmava uma garantia sem teste. Os dois foram corrigidos com testes de regressão; quatro achados foram conscientemente não corrigidos, com justificativa no PR.
+- **`AGENTS.md`:** o Cursor ignorou o `CLAUDE.md` no experimento, então o repositório passou a expor as mesmas regras também como `AGENTS.md` (symlink).
