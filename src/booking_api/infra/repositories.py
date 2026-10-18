@@ -117,19 +117,24 @@ class SqlAlchemyBookingRepository:
         session = self._session
         result = session.execute(
             update(BookingModel)
-            .where(BookingModel.id == booking_id, BookingModel.status == BookingStatus.ACTIVE.value)
+            .where(
+                BookingModel.id == booking_id,
+                BookingModel.status == BookingStatus.ACTIVE.value,
+                BookingModel.start_time > func.clock_timestamp(),
+            )
             .values(status=BookingStatus.CANCELLED.value, cancelled_at=cancelled_at)
         )
         if result.rowcount == 0:
+            status = session.scalar(select(BookingModel.status).where(BookingModel.id == booking_id))
             session.rollback()
-            raise BookingAlreadyCancelledError("Booking is already cancelled.")
+            if status == BookingStatus.CANCELLED.value:
+                raise BookingAlreadyCancelledError("Booking is already cancelled.")
+            raise BookingAlreadyStartedError("Booking cannot be cancelled after it has started.")
         session.commit()
         model = session.get(BookingModel, booking_id)
         return _to_booking(model)
 
-    def reschedule(
-        self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime, now: datetime
-    ) -> Booking:
+    def reschedule(self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
         session = self._session
         try:
             session.execute(
@@ -153,7 +158,7 @@ class SqlAlchemyBookingRepository:
                 .where(
                     BookingModel.id == booking_id,
                     BookingModel.status == BookingStatus.ACTIVE.value,
-                    BookingModel.start_time > now,
+                    BookingModel.start_time > func.clock_timestamp(),
                 )
                 .values(start_time=start_time, end_time=end_time)
             )

@@ -94,9 +94,7 @@ class FakeBookingRepository:
         self._bookings[booking_id] = cancelled
         return cancelled
 
-    def reschedule(
-        self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime, now: datetime
-    ) -> Booking:
+    def reschedule(self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
         for existing in self._bookings.values():
             if (
                 existing.id != booking_id

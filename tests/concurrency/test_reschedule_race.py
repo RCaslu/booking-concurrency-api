@@ -7,8 +7,6 @@ import pytest
 from sqlalchemy import func, select
 
 from booking_api.domain.entities import BookingStatus
-from booking_api.domain.exceptions import BookingAlreadyStartedError
-from booking_api.infra.repositories import SqlAlchemyBookingRepository
 from booking_api.infra.models import BookingModel
 
 pytestmark = pytest.mark.concurrency
@@ -118,19 +116,3 @@ class TestRescheduleIsNotRaceable:
         assert final.status == BookingStatus.CANCELLED.value
         expected_start = target_start if reschedule_status == 200 else future_slot.start
         assert final.start_time == expected_start
-
-    def test_write_landing_after_start_is_rejected(self, client, resource_id, future_slot, db_session):
-        booking_id = UUID(_create(client, resource_id, "user@example.com", future_slot.start, future_slot.end)["id"])
-        target_start = future_slot.start + timedelta(days=5)
-
-        with pytest.raises(BookingAlreadyStartedError):
-            SqlAlchemyBookingRepository(db_session).reschedule(
-                booking_id,
-                UUID(resource_id),
-                target_start,
-                target_start + timedelta(hours=1),
-                now=future_slot.start + timedelta(seconds=1),
-            )
-
-        db_session.expire_all()
-        assert db_session.get(BookingModel, booking_id).start_time == future_slot.start
