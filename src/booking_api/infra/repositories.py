@@ -123,6 +123,46 @@ class SqlAlchemyBookingRepository:
         model = session.get(BookingModel, booking_id)
         return _to_booking(model)
 
+    def reschedule(self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+        # Same lock as create_active_booking() so reschedules and creations on
+        # this resource serialize; the EXCLUDE constraint stays the final net.
+        # The UPDATE is conditional on ACTIVE, like cancel(), so a concurrent
+        # cancel that committed first makes this one fail instead of reviving it.
+        session = self._session
+        try:
+            session.execute(
+                select(ResourceModel.id).where(ResourceModel.id == resource_id).with_for_update()
+            ).one()
+
+            conflict = session.execute(
+                select(BookingModel.id).where(
+                    BookingModel.resource_id == resource_id,
+                    BookingModel.id != booking_id,
+                    BookingModel.status == BookingStatus.ACTIVE.value,
+                    BookingModel.start_time < end_time,
+                    BookingModel.end_time > start_time,
+                )
+            ).first()
+            if conflict is not None:
+                raise OverlappingBookingError("Resource is already booked for part of this time window.")
+
+            result = session.execute(
+                update(BookingModel)
+                .where(BookingModel.id == booking_id, BookingModel.status == BookingStatus.ACTIVE.value)
+                .values(start_time=start_time, end_time=end_time)
+            )
+            if result.rowcount == 0:
+                raise BookingAlreadyCancelledError("Booking is already cancelled.")
+            session.commit()
+        except (OverlappingBookingError, BookingAlreadyCancelledError):
+            session.rollback()
+            raise
+        except IntegrityError:
+            session.rollback()
+            raise OverlappingBookingError("Resource is already booked for part of this time window.")
+        model = session.get(BookingModel, booking_id, populate_existing=True)
+        return _to_booking(model)
+
     def lock_requester(self, requester_email: str) -> None:
         # Transaction-scoped advisory lock keyed by the requester's email hash —
         # serializes this requester's concurrent booking attempts (across any

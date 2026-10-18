@@ -11,6 +11,7 @@ from booking_api.domain.exceptions import BookingNotFoundError, ResourceNotFound
 from booking_api.domain.rules import (
     check_booking_quota,
     ensure_cancellable,
+    ensure_reschedulable,
     validate_query_window,
     validate_time_window,
 )
@@ -67,6 +68,17 @@ class BookingService:
         now = self._clock()
         ensure_cancellable(booking, now)
         return self._booking_repo.cancel(booking_id, cancelled_at=now)
+
+    def reschedule_booking(self, booking_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+        now = self._clock()
+        validate_time_window(start_time, end_time, now)
+
+        booking = self._booking_repo.get(booking_id)
+        if booking is None:
+            raise BookingNotFoundError(f"Booking {booking_id} not found.")
+
+        ensure_reschedulable(booking, now)
+        return self._booking_repo.reschedule(booking_id, booking.resource_id, start_time, end_time)
 
     def check_availability(self, resource_id: UUID, start_time: datetime, end_time: datetime) -> AvailabilityResult:
         validate_query_window(start_time, end_time)
