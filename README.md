@@ -137,7 +137,7 @@ O CI (GitHub Actions) roda a suíte completa contra Postgres em todo PR e todo p
 
 - **Branches:** `main` (protegida por conduta) ← `develop` ← `feature/*`. Nenhum commit direto em `main`.
 - **Sprints:** Sprint 1 = PRs [#1](https://github.com/RCaslu/booking-concurrency-api/pull/1) a [#6](https://github.com/RCaslu/booking-concurrency-api/pull/6). Sprint 2 = milestone [Entrega 2](https://github.com/RCaslu/booking-concurrency-api/milestone/1), issues #8 a #13, cada uma fechada por um PR.
-- **Revisão:** cada PR tem uma seção "AI Review" com os achados da skill `code-review` (corrigidos ou não, com justificativa) e passa pelo CI antes do merge. Como o trabalho é individual, a revisão por IA documentada faz o papel da revisão por par. As limitações disso estão discutidas em [`docs/ai-analise-critica.md`](docs/ai-analise-critica.md#4-a-centralidade-da-homologação-humana-no-fluxo-sdd).
+- **Revisão:** cada PR de feature ou de documentação tem uma seção "AI Review" com os achados da skill `code-review` (corrigidos ou não, com justificativa) e passa pelo CI antes do merge (a exceção é o PR #7, que só alterou o `.gitignore`). Como o trabalho é individual, a revisão por IA documentada faz o papel da revisão por par. As limitações disso estão discutidas em [`docs/ai-analise-critica.md`](docs/ai-analise-critica.md#4-a-centralidade-da-homologação-humana-no-fluxo-sdd).
 
 ## Documentação
 
