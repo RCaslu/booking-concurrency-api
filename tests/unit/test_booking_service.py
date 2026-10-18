@@ -6,8 +6,11 @@ import pytest
 from booking_api.application.booking_service import BookingService
 from booking_api.domain.entities import Booking, BookingStatus, Resource
 from booking_api.domain.exceptions import (
+    BookingAlreadyCancelledError,
+    BookingAlreadyStartedError,
     BookingNotFoundError,
     BookingQuotaExceededError,
+    InvalidTimeWindowError,
     OverlappingBookingError,
     ResourceNotFoundError,
 )
@@ -109,6 +112,34 @@ class FakeBookingRepository:
 
     def list_for_resource(self, resource_id: UUID) -> list[Booking]:
         return [b for b in self._bookings.values() if b.resource_id == resource_id]
+
+    def add(self, booking: Booking) -> None:
+        self._bookings[booking.id] = booking
+
+    def reschedule(self, booking_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+        booking = self._bookings[booking_id]
+        for existing in self._bookings.values():
+            if existing.id == booking_id:
+                continue
+            if (
+                existing.resource_id == booking.resource_id
+                and existing.status == BookingStatus.ACTIVE
+                and overlaps(existing.start_time, existing.end_time, start_time, end_time)
+            ):
+                raise OverlappingBookingError("Resource is already booked for part of this time window.")
+
+        updated = Booking(
+            id=booking.id,
+            resource_id=booking.resource_id,
+            requester_email=booking.requester_email,
+            start_time=start_time,
+            end_time=end_time,
+            status=booking.status,
+            created_at=booking.created_at,
+            cancelled_at=booking.cancelled_at,
+        )
+        self._bookings[booking_id] = updated
+        return updated
 
 
 @pytest.fixture
@@ -212,6 +243,147 @@ class TestCancelBooking:
     def test_raises_for_unknown_booking(self, service: BookingService):
         with pytest.raises(BookingNotFoundError):
             service.cancel_booking(uuid4())
+
+
+class TestRescheduleBooking:
+    def test_reschedules_active_future_booking(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        new_start = NOW + timedelta(hours=5)
+        new_end = new_start + timedelta(hours=1)
+
+        moved = service.reschedule_booking(booking.id, new_start, new_end)
+
+        assert moved.id == booking.id
+        assert moved.resource_id == resource.id
+        assert moved.requester_email == "user@example.com"
+        assert moved.start_time == new_start
+        assert moved.end_time == new_end
+        assert moved.status == BookingStatus.ACTIVE
+        assert moved.created_at == booking.created_at
+        assert moved.cancelled_at is None
+
+    def test_allows_new_window_overlapping_its_own_current_window(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        new_start = start + timedelta(minutes=30)
+        new_end = end + timedelta(minutes=30)
+
+        moved = service.reschedule_booking(booking.id, new_start, new_end)
+
+        assert moved.start_time == new_start
+        assert moved.end_time == new_end
+
+    def test_raises_for_unknown_booking(self, service: BookingService):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+
+        with pytest.raises(BookingNotFoundError):
+            service.reschedule_booking(uuid4(), start, end)
+
+    def test_raises_when_new_window_overlaps_another_active_booking(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        other_start = NOW + timedelta(hours=4)
+        other_end = other_start + timedelta(hours=1)
+        service.create_booking(resource.id, "other@example.com", other_start, other_end)
+
+        with pytest.raises(OverlappingBookingError):
+            service.reschedule_booking(booking.id, other_start, other_end)
+
+    def test_allows_window_held_by_another_resource(
+        self, service: BookingService, resource_repo: FakeResourceRepository, resource: Resource
+    ):
+        other = Resource(id=uuid4(), name="Sala B", capacity=4, location=None, created_at=NOW)
+        resource_repo.add(other)
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        other_start = NOW + timedelta(hours=4)
+        other_end = other_start + timedelta(hours=1)
+        service.create_booking(other.id, "other@example.com", other_start, other_end)
+
+        moved = service.reschedule_booking(booking.id, other_start, other_end)
+
+        assert moved.resource_id == resource.id
+        assert moved.start_time == other_start
+
+    def test_raises_when_booking_is_cancelled(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        service.cancel_booking(booking.id)
+        new_start = NOW + timedelta(hours=5)
+        new_end = new_start + timedelta(hours=1)
+
+        with pytest.raises(BookingAlreadyCancelledError):
+            service.reschedule_booking(booking.id, new_start, new_end)
+
+    def test_raises_when_booking_already_started(
+        self, service: BookingService, booking_repo: FakeBookingRepository, resource: Resource
+    ):
+        start = NOW - timedelta(hours=1)
+        booking = Booking(
+            id=uuid4(),
+            resource_id=resource.id,
+            requester_email="user@example.com",
+            start_time=start,
+            end_time=start + timedelta(hours=1),
+            status=BookingStatus.ACTIVE,
+            created_at=NOW,
+            cancelled_at=None,
+        )
+        booking_repo.add(booking)
+        new_start = NOW + timedelta(hours=5)
+        new_end = new_start + timedelta(hours=1)
+
+        with pytest.raises(BookingAlreadyStartedError):
+            service.reschedule_booking(booking.id, new_start, new_end)
+
+    def test_raises_when_end_is_not_after_start(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+
+        with pytest.raises(InvalidTimeWindowError):
+            service.reschedule_booking(booking.id, end, start)
+
+    def test_raises_when_new_start_is_in_the_past(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        new_start = NOW - timedelta(minutes=1)
+        new_end = new_start + timedelta(hours=1)
+
+        with pytest.raises(InvalidTimeWindowError):
+            service.reschedule_booking(booking.id, new_start, new_end)
+
+    def test_raises_when_duration_is_shorter_than_minimum(self, service: BookingService, resource: Resource):
+        start = NOW + timedelta(hours=1)
+        end = start + timedelta(hours=1)
+        booking = service.create_booking(resource.id, "user@example.com", start, end)
+        new_start = NOW + timedelta(hours=5)
+        new_end = new_start + timedelta(minutes=14)
+
+        with pytest.raises(InvalidTimeWindowError):
+            service.reschedule_booking(booking.id, new_start, new_end)
+
+    def test_does_not_apply_requester_quota(self, service: BookingService, resource: Resource):
+        first = None
+        for i in range(3):
+            start = NOW + timedelta(hours=1 + i * 5)
+            created = service.create_booking(resource.id, "user@example.com", start, start + timedelta(hours=1))
+            if first is None:
+                first = created
+        new_start = NOW + timedelta(hours=30)
+        new_end = new_start + timedelta(hours=1)
+
+        moved = service.reschedule_booking(first.id, new_start, new_end)
+
+        assert moved.start_time == new_start
 
 
 class TestCheckAvailability:

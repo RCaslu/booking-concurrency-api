@@ -36,6 +36,17 @@ class BookingRepository(Protocol):
 
     def cancel(self, booking_id: UUID, cancelled_at: datetime) -> Booking: ...
 
+    def reschedule(self, booking_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+        """Moves an ACTIVE booking to [start_time, end_time).
+
+        The booking being moved is not a conflict with itself. Must raise
+        OverlappingBookingError when another ACTIVE booking of the same resource
+        already occupies that window. Implementations backed by a real database
+        must guarantee this atomically under concurrent callers, including a
+        reschedule racing a create (see infra.repositories).
+        """
+        ...
+
     def lock_requester(self, requester_email: str) -> None:
         """Serializes concurrent callers for this requester (across any resource)
         for the rest of the current transaction. Must be called before

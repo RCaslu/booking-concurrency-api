@@ -19,6 +19,7 @@ Domínio escolhido — salas de reunião, não vagas de estacionamento — porqu
 | RF5 | Listar reservas de um recurso |
 | RF6 | Consultar uma reserva específica |
 | RF7 | Cancelar uma reserva antes do seu início |
+| RF8 | Remarcar uma reserva existente para um novo intervalo, antes do seu início |
 
 ## Requisitos não-funcionais
 
@@ -85,7 +86,10 @@ Todas as datas em ISO-8601, **obrigatoriamente com timezone** (UTC recomendado) 
 | POST | `/resources/{id}/bookings` | 201 `Booking` | 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_TIME_WINDOW`, 409 `OVERLAPPING_BOOKING`, 409 `BOOKING_QUOTA_EXCEEDED` |
 | GET | `/resources/{id}/bookings` | 200 `Booking[]` | 404 |
 | GET | `/bookings/{id}` | 200 `Booking` | 404 `BOOKING_NOT_FOUND` |
+| PATCH | `/bookings/{id}` | 200 `Booking` | 404 `BOOKING_NOT_FOUND`, 422 `INVALID_TIME_WINDOW`, 409 `OVERLAPPING_BOOKING`, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
 | DELETE | `/bookings/{id}` | 200 `Booking` (status=CANCELLED) | 404, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
+
+`PATCH /bookings/{id}` recebe `{"start_time", "end_time"}`. A reserva precisa estar `ACTIVE` e ainda não ter começado (mesma regra de R4). A nova janela passa por R1, R2 e R6. A checagem de R3 ignora a própria reserva.
 
 ### Formato de erro
 
@@ -127,3 +131,5 @@ Registro de ajustes feitos na especificação/implementação a partir de testes
 6. **Unicidade de nome de recurso removida**: `ResourceModel.name` tinha `unique=True` sem nenhum tratamento de erro correspondente — um nome duplicado gerava 500 não tratado. Como RF1 nunca exigiu unicidade, a constraint foi removida em vez de adicionar tratamento pra uma regra que não fazia parte da especificação original.
 
 7. **`/availability` não validava a janela de tempo** (achado pela revisão de IA no PR de documentação, ao conferir a tabela de contratos contra a implementação real): a tabela de endpoints já prometia `422 INVALID_TIME_WINDOW` para essa rota, mas `check_availability()` nunca chamava validação alguma — um datetime naive quebraria com 500, e uma janela invertida (`end` antes de `start`) retornaria silenciosamente `is_available: true`. Corrigido com uma validação mais leve (`validate_query_window`, só forma do intervalo — timezone-aware e `end > start`), deliberadamente *sem* as regras R2 (não pode estar no passado) e R6 (duração 15min-4h), que fazem sentido pra uma reserva mas não pra uma consulta de disponibilidade.
+
+8. **Remarcação (RF8) não pode tratar a própria reserva como conflito, e serializa no mesmo lock do recurso**: reutilizar a checagem de sobreposição da criação rejeitaria o deslocamento mais comum — uma janela nova que ainda intersecta o horário atual — porque a reserva conflitaria consigo mesma. A `ExcludeConstraint` não compara uma linha com ela mesma, então `reschedule` filtra `id != booking_id`. Antes dessa leitura, toma `SELECT ... FOR UPDATE` na linha do recurso (a mesma trava de `create_active_booking`), para uma remarcação concorrente com outra remarcação ou com uma criação não passar as duas na checagem. `IntegrityError` da constraint continua mapeado para `OVERLAPPING_BOOKING`. O `UPDATE` só ocorre com a linha da reserva travada e `status = 'ACTIVE'`, pelo mesmo motivo do item 5: um PATCH e um DELETE simultâneos no mesmo booking não podem os dois concluir a escrita.

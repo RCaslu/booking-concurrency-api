@@ -8,7 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from booking_api.domain.entities import Booking, BookingStatus, Resource
-from booking_api.domain.exceptions import BookingAlreadyCancelledError, OverlappingBookingError
+from booking_api.domain.exceptions import (
+    BookingAlreadyCancelledError,
+    BookingNotFoundError,
+    OverlappingBookingError,
+)
 from booking_api.infra.models import BookingModel, ResourceModel
 
 
@@ -122,6 +126,46 @@ class SqlAlchemyBookingRepository:
         session.commit()
         model = session.get(BookingModel, booking_id)
         return _to_booking(model)
+
+    def reschedule(self, booking_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+        session = self._session
+        try:
+            resource_id = session.scalar(select(BookingModel.resource_id).where(BookingModel.id == booking_id))
+            if resource_id is None:
+                raise BookingNotFoundError(f"Booking {booking_id} not found.")
+
+            session.execute(select(ResourceModel.id).where(ResourceModel.id == resource_id).with_for_update()).one()
+
+            model = session.execute(
+                select(BookingModel).where(BookingModel.id == booking_id).with_for_update()
+            ).scalar_one()
+            if model.status != BookingStatus.ACTIVE.value:
+                session.rollback()
+                raise BookingAlreadyCancelledError("Booking is already cancelled.")
+
+            conflict = session.execute(
+                select(BookingModel.id).where(
+                    BookingModel.resource_id == resource_id,
+                    BookingModel.id != booking_id,
+                    BookingModel.status == BookingStatus.ACTIVE.value,
+                    BookingModel.start_time < end_time,
+                    BookingModel.end_time > start_time,
+                )
+            ).first()
+            if conflict is not None:
+                raise OverlappingBookingError("Resource is already booked for part of this time window.")
+
+            model.start_time = start_time
+            model.end_time = end_time
+            session.commit()
+            session.refresh(model)
+            return _to_booking(model)
+        except OverlappingBookingError:
+            session.rollback()
+            raise
+        except IntegrityError:
+            session.rollback()
+            raise OverlappingBookingError("Resource is already booked for part of this time window.")
 
     def lock_requester(self, requester_email: str) -> None:
         # Transaction-scoped advisory lock keyed by the requester's email hash —

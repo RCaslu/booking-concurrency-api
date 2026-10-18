@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -6,6 +6,10 @@ import pytest
 from booking_api.infra.repositories import SqlAlchemyBookingRepository
 
 pytestmark = pytest.mark.integration
+
+
+def _as_utc(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 def _booking_payload(slot, email="user@example.com"):
@@ -133,6 +137,137 @@ class TestCancelBooking:
         )
 
         response = client.delete(f"/bookings/{started.id}")
+
+        assert response.status_code == 409
+        assert response.json()["error_code"] == "BOOKING_ALREADY_STARTED"
+
+
+class TestRescheduleBooking:
+    def test_reschedule_returns_updated_booking(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+        new_start = future_slot.start + timedelta(hours=3)
+        new_end = new_start + timedelta(hours=1)
+
+        response = client.patch(
+            f"/bookings/{created['id']}",
+            json={"start_time": new_start.isoformat(), "end_time": new_end.isoformat()},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["id"] == created["id"]
+        assert body["status"] == "ACTIVE"
+        assert _as_utc(body["start_time"]) == new_start
+        assert _as_utc(body["end_time"]) == new_end
+        assert body["requester_email"] == "user@example.com"
+        assert body["cancelled_at"] is None
+
+    def test_reschedule_overlapping_own_window_returns_200(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+        new_start = future_slot.start + timedelta(minutes=30)
+        new_end = future_slot.end + timedelta(minutes=30)
+
+        response = client.patch(
+            f"/bookings/{created['id']}",
+            json={"start_time": new_start.isoformat(), "end_time": new_end.isoformat()},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["id"] == created["id"]
+
+    def test_reschedule_unknown_booking_returns_404(self, client, future_slot):
+        response = client.patch(
+            f"/bookings/{uuid4()}",
+            json={"start_time": future_slot.start.isoformat(), "end_time": future_slot.end.isoformat()},
+        )
+
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "BOOKING_NOT_FOUND"
+
+    def test_reschedule_with_end_before_start_returns_422(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+
+        response = client.patch(
+            f"/bookings/{created['id']}",
+            json={"start_time": future_slot.end.isoformat(), "end_time": future_slot.start.isoformat()},
+        )
+
+        assert response.status_code == 422
+        assert response.json()["error_code"] == "INVALID_TIME_WINDOW"
+
+    def test_reschedule_onto_another_active_booking_returns_409(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+        other_start = future_slot.start + timedelta(hours=3)
+        other_end = other_start + timedelta(hours=1)
+        client.post(
+            f"/resources/{resource_id}/bookings",
+            json={
+                "requester_email": "other@example.com",
+                "start_time": other_start.isoformat(),
+                "end_time": other_end.isoformat(),
+            },
+        )
+
+        response = client.patch(
+            f"/bookings/{created['id']}",
+            json={"start_time": other_start.isoformat(), "end_time": other_end.isoformat()},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["error_code"] == "OVERLAPPING_BOOKING"
+        unchanged = client.get(f"/bookings/{created['id']}").json()
+        assert _as_utc(unchanged["start_time"]) == future_slot.start
+        assert _as_utc(unchanged["end_time"]) == future_slot.end
+
+    def test_reschedule_adjacent_to_another_booking_returns_200(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+        other_start = future_slot.end + timedelta(hours=2)
+        other_end = other_start + timedelta(hours=1)
+        client.post(
+            f"/resources/{resource_id}/bookings",
+            json={
+                "requester_email": "other@example.com",
+                "start_time": other_start.isoformat(),
+                "end_time": other_end.isoformat(),
+            },
+        )
+
+        response = client.patch(
+            f"/bookings/{created['id']}",
+            json={"start_time": other_end.isoformat(), "end_time": (other_end + timedelta(hours=1)).isoformat()},
+        )
+
+        assert response.status_code == 200
+
+    def test_reschedule_cancelled_booking_returns_409(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+        client.delete(f"/bookings/{created['id']}")
+        new_start = future_slot.start + timedelta(hours=3)
+        new_end = new_start + timedelta(hours=1)
+
+        response = client.patch(
+            f"/bookings/{created['id']}",
+            json={"start_time": new_start.isoformat(), "end_time": new_end.isoformat()},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["error_code"] == "BOOKING_ALREADY_CANCELLED"
+
+    def test_reschedule_booking_that_already_started_returns_409(self, client, resource_id, future_slot, db_session):
+        repo = SqlAlchemyBookingRepository(db_session)
+        started = repo.create_active_booking(
+            resource_id=resource_id,
+            requester_email="user@example.com",
+            start_time=future_slot.start - timedelta(days=2),
+            end_time=future_slot.start - timedelta(days=2) + timedelta(hours=1),
+        )
+        new_start = future_slot.start + timedelta(hours=3)
+        new_end = new_start + timedelta(hours=1)
+
+        response = client.patch(
+            f"/bookings/{started.id}",
+            json={"start_time": new_start.isoformat(), "end_time": new_end.isoformat()},
+        )
 
         assert response.status_code == 409
         assert response.json()["error_code"] == "BOOKING_ALREADY_STARTED"
