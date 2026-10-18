@@ -19,6 +19,7 @@ Domínio escolhido — salas de reunião, não vagas de estacionamento — porqu
 | RF5 | Listar reservas de um recurso |
 | RF6 | Consultar uma reserva específica |
 | RF7 | Cancelar uma reserva antes do seu início |
+| RF8 | Remarcar uma reserva antes do seu início para uma nova janela de tempo (mesmas pré-condições de R4; nova janela sujeita a R1, R2, R3 e R6 — a própria reserva não conta como conflito) |
 
 ## Requisitos não-funcionais
 
@@ -86,6 +87,7 @@ Todas as datas em ISO-8601, **obrigatoriamente com timezone** (UTC recomendado) 
 | GET | `/resources/{id}/bookings` | 200 `Booking[]` | 404 |
 | GET | `/bookings/{id}` | 200 `Booking` | 404 `BOOKING_NOT_FOUND` |
 | DELETE | `/bookings/{id}` | 200 `Booking` (status=CANCELLED) | 404, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
+| PATCH | `/bookings/{id}` (corpo `{start_time, end_time}`) | 200 `Booking` (atualizado) | 404 `BOOKING_NOT_FOUND`, 422 `INVALID_TIME_WINDOW`, 409 `OVERLAPPING_BOOKING`, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
 
 ### Formato de erro
 
@@ -127,3 +129,9 @@ Registro de ajustes feitos na especificação/implementação a partir de testes
 6. **Unicidade de nome de recurso removida**: `ResourceModel.name` tinha `unique=True` sem nenhum tratamento de erro correspondente — um nome duplicado gerava 500 não tratado. Como RF1 nunca exigiu unicidade, a constraint foi removida em vez de adicionar tratamento pra uma regra que não fazia parte da especificação original.
 
 7. **`/availability` não validava a janela de tempo** (achado pela revisão de IA no PR de documentação, ao conferir a tabela de contratos contra a implementação real): a tabela de endpoints já prometia `422 INVALID_TIME_WINDOW` para essa rota, mas `check_availability()` nunca chamava validação alguma — um datetime naive quebraria com 500, e uma janela invertida (`end` antes de `start`) retornaria silenciosamente `is_available: true`. Corrigido com uma validação mais leve (`validate_query_window`, só forma do intervalo — timezone-aware e `end > start`), deliberadamente *sem* as regras R2 (não pode estar no passado) e R6 (duração 15min-4h), que fazem sentido pra uma reserva mas não pra uma consulta de disponibilidade.
+
+8. **Remarcação (RF8) reaproveita o lock de criação em vez de um mecanismo novo**: `reschedule()` faz o mesmo `SELECT ... FOR UPDATE` no recurso que `create_active_booking()`, então remarcações e criações no mesmo recurso se serializam pelo mesmo lock, e a `ExcludeConstraint` continua sendo a rede final (um `UPDATE` que gere sobreposição viola a constraint igual a um `INSERT`). A checagem de conflito exclui a própria reserva (`id != booking_id`) — sem isso, mover uma reserva 30 minutos pra frente conflitaria com ela mesma. O `UPDATE` é condicional a `status = 'ACTIVE'`, no mesmo padrão do item 5: um cancelamento concorrente que comite primeiro faz a remarcação falhar com `BOOKING_ALREADY_CANCELLED` em vez de alterar a janela de uma reserva já cancelada. A pré-condição de negócio (ACTIVE e não iniciada) foi extraída para um helper compartilhado entre `ensure_cancellable` e o novo `ensure_reschedulable`. A cota (R7) não é rechecada: remarcar não muda o número de reservas ativas do solicitante. Provado por `tests/concurrency/test_reschedule_race.py` (N remarcações concorrentes para o mesmo horário, e uma remarcação concorrendo com N-1 criações — sempre exatamente 1 vencedor, verificado no banco).
+
+9. **R4 era checado fora da seção crítica, na remarcação e no cancelamento** (achado pela revisão de IA no PR do RF8, e perdido pelas duas ferramentas do experimento comparativo, ver `docs/ai-comparativo.md`): `ensure_reschedulable`/`ensure_cancellable` rodam sobre uma leitura anterior ao lock, e os `UPDATE`s só filtravam `status = 'ACTIVE'`. Uma remarcação enfileirada atrás do lock do recurso podia mover uma reserva que já tinha começado, e o cancelamento tinha a mesma brecha desde a Sprint 1. A especificação de R4 passou a explicitar que **"ainda não começou" é verificado pela própria escrita, com o relógio do banco no momento da escrita**: os dois `UPDATE`s exigem `start_time > clock_timestamp()`, e `rowcount = 0` é resolvido para `BOOKING_ALREADY_CANCELLED` ou `BOOKING_ALREADY_STARTED`.
+
+   A primeira correção passava para o `UPDATE` um `now` lido na aplicação *antes* do lock. A segunda rodada de revisão mostrou que isso só repetia a checagem com um valor velho. `now()` do Postgres também não serve, porque devolve o início da transação, que começa antes do lock; `clock_timestamp()` devolve a hora real de execução da instrução. Provado por `tests/integration/test_write_time_preconditions.py` (cada teste falha se a condição correspondente for removida). A mesma revisão apontou que o item 8 afirmava como "provado" o comportamento contra cancelamento concorrente sem teste nenhum; o teste foi adicionado (`test_reschedule_racing_cancel_never_moves_a_cancelled_booking`).

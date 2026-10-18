@@ -29,6 +29,11 @@ class BookingCreate(BaseModel):
     end_time: datetime
 
 
+class BookingReschedule(BaseModel):
+    start_time: datetime
+    end_time: datetime
+
+
 class BookingOut(BaseModel):
     id: UUID
     resource_id: UUID

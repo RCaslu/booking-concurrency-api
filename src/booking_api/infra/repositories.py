@@ -8,7 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from booking_api.domain.entities import Booking, BookingStatus, Resource
-from booking_api.domain.exceptions import BookingAlreadyCancelledError, OverlappingBookingError
+from booking_api.domain.exceptions import (
+    BookingAlreadyCancelledError,
+    BookingAlreadyStartedError,
+    OverlappingBookingError,
+)
 from booking_api.infra.models import BookingModel, ResourceModel
 
 
@@ -113,14 +117,64 @@ class SqlAlchemyBookingRepository:
         session = self._session
         result = session.execute(
             update(BookingModel)
-            .where(BookingModel.id == booking_id, BookingModel.status == BookingStatus.ACTIVE.value)
+            .where(
+                BookingModel.id == booking_id,
+                BookingModel.status == BookingStatus.ACTIVE.value,
+                BookingModel.start_time > func.clock_timestamp(),
+            )
             .values(status=BookingStatus.CANCELLED.value, cancelled_at=cancelled_at)
         )
         if result.rowcount == 0:
+            status = session.scalar(select(BookingModel.status).where(BookingModel.id == booking_id))
             session.rollback()
-            raise BookingAlreadyCancelledError("Booking is already cancelled.")
+            if status == BookingStatus.CANCELLED.value:
+                raise BookingAlreadyCancelledError("Booking is already cancelled.")
+            raise BookingAlreadyStartedError("Booking cannot be cancelled after it has started.")
         session.commit()
         model = session.get(BookingModel, booking_id)
+        return _to_booking(model)
+
+    def reschedule(self, booking_id: UUID, resource_id: UUID, start_time: datetime, end_time: datetime) -> Booking:
+        session = self._session
+        try:
+            session.execute(
+                select(ResourceModel.id).where(ResourceModel.id == resource_id).with_for_update()
+            ).one()
+
+            conflict = session.execute(
+                select(BookingModel.id).where(
+                    BookingModel.resource_id == resource_id,
+                    BookingModel.id != booking_id,
+                    BookingModel.status == BookingStatus.ACTIVE.value,
+                    BookingModel.start_time < end_time,
+                    BookingModel.end_time > start_time,
+                )
+            ).first()
+            if conflict is not None:
+                raise OverlappingBookingError("Resource is already booked for part of this time window.")
+
+            result = session.execute(
+                update(BookingModel)
+                .where(
+                    BookingModel.id == booking_id,
+                    BookingModel.status == BookingStatus.ACTIVE.value,
+                    BookingModel.start_time > func.clock_timestamp(),
+                )
+                .values(start_time=start_time, end_time=end_time)
+            )
+            if result.rowcount == 0:
+                status = session.scalar(select(BookingModel.status).where(BookingModel.id == booking_id))
+                if status == BookingStatus.CANCELLED.value:
+                    raise BookingAlreadyCancelledError("Booking is already cancelled.")
+                raise BookingAlreadyStartedError("Booking cannot be rescheduled after it has started.")
+            session.commit()
+        except (OverlappingBookingError, BookingAlreadyCancelledError, BookingAlreadyStartedError):
+            session.rollback()
+            raise
+        except IntegrityError:
+            session.rollback()
+            raise OverlappingBookingError("Resource is already booked for part of this time window.")
+        model = session.get(BookingModel, booking_id, populate_existing=True)
         return _to_booking(model)
 
     def lock_requester(self, requester_email: str) -> None:
