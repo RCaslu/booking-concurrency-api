@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from booking_api.api.deps import get_booking_service, get_db
-from booking_api.api.schemas import BookingOut
+from booking_api.api.schemas import BookingOut, BookingReschedule
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
@@ -17,3 +17,8 @@ def get_booking(booking_id: UUID, db: Session = Depends(get_db)):
 @router.delete("/{booking_id}", response_model=BookingOut)
 def cancel_booking(booking_id: UUID, db: Session = Depends(get_db)):
     return get_booking_service(db).cancel_booking(booking_id)
+
+
+@router.patch("/{booking_id}", response_model=BookingOut)
+def reschedule_booking(booking_id: UUID, payload: BookingReschedule, db: Session = Depends(get_db)):
+    return get_booking_service(db).reschedule_booking(booking_id, payload.start_time, payload.end_time)

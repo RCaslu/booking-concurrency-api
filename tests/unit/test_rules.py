@@ -16,6 +16,7 @@ from booking_api.domain.rules import (
     MIN_BOOKING_DURATION,
     check_booking_quota,
     ensure_cancellable,
+    ensure_reschedulable,
     overlaps,
     validate_query_window,
     validate_time_window,
@@ -196,3 +197,19 @@ class TestEnsureCancellable:
         booking = _booking(start=NOW)
         with pytest.raises(BookingAlreadyStartedError):
             ensure_cancellable(booking, NOW)
+
+
+class TestEnsureReschedulable:
+    def test_active_future_booking_is_reschedulable(self):
+        booking = _booking(start=NOW + timedelta(hours=1))
+        ensure_reschedulable(booking, NOW)
+
+    def test_already_cancelled_booking_raises(self):
+        booking = _booking(start=NOW + timedelta(hours=1), status=BookingStatus.CANCELLED)
+        with pytest.raises(BookingAlreadyCancelledError):
+            ensure_reschedulable(booking, NOW)
+
+    def test_booking_starting_exactly_now_raises(self):
+        booking = _booking(start=NOW)
+        with pytest.raises(BookingAlreadyStartedError):
+            ensure_reschedulable(booking, NOW)

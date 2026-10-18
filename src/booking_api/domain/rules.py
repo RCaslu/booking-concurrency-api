@@ -50,8 +50,16 @@ def check_booking_quota(active_bookings_count: int) -> None:
         )
 
 
-def ensure_cancellable(booking: Booking, now: datetime) -> None:
+def _ensure_active_and_not_started(booking: Booking, now: datetime, action: str) -> None:
     if booking.status == BookingStatus.CANCELLED:
         raise BookingAlreadyCancelledError("Booking is already cancelled.")
     if now >= booking.start_time:
-        raise BookingAlreadyStartedError("Booking cannot be cancelled after it has started.")
+        raise BookingAlreadyStartedError(f"Booking cannot be {action} after it has started.")
+
+
+def ensure_cancellable(booking: Booking, now: datetime) -> None:
+    _ensure_active_and_not_started(booking, now, "cancelled")
+
+
+def ensure_reschedulable(booking: Booking, now: datetime) -> None:
+    _ensure_active_and_not_started(booking, now, "rescheduled")
