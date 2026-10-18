@@ -36,7 +36,7 @@ Branches publicadas com o resultado bruto de cada uma: [`experiment/claude-rf8`]
 
 ### Defeito compartilhado pelas duas
 
-As duas implementações verificam R4 ("a reserva ainda não começou") **antes** de tomar o lock, e o `UPDATE` não verifica de novo. Isso abre uma janela pequena de checagem-e-ação, o mesmo padrão dos erros E4 e E5 da Sprint 1 ([erros-e-reespecificacao.md](erros-e-reespecificacao.md)). Nenhuma das duas ferramentas percebeu sozinha. Ver o tratamento na seção "AI Review" do PR do RF8.
+As duas implementações verificam R4 ("a reserva ainda não começou") **antes** de tomar o lock, e o `UPDATE` não verifica de novo. Isso abre uma janela pequena de checagem-e-ação, o mesmo padrão dos erros E4 e E5 da Sprint 1 ([erros-e-reespecificacao.md](erros-e-reespecificacao.md)). Nenhuma das duas ferramentas percebeu sozinha. Foi achado pela skill `code-review` e corrigido no PR [#14](https://github.com/RCaslu/booking-concurrency-api/pull/14) (`UPDATE ... AND start_time > now`, com teste de regressão que falha sem a correção).
 
 ## Leitura qualitativa
 
