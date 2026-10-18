@@ -12,9 +12,10 @@ Todo o código deste repositório foi escrito com agentes de IA: Claude Code nas
 | Cota R7 burlável (E4) e cancelamento duplo (E5) | Código funcionalmente correto em teste sequencial, mas com race | É a classe de bug que o projeto existe para evitar, e mesmo assim o agente a produziu duas vezes | Revisão de IA dirigida, antes do merge |
 | Docstring descrevendo um bug já corrigido (PR #4) | Documentação alucinada sobre o próprio código | Leva o próximo leitor, humano ou agente, a uma conclusão errada | Revisão de IA |
 | Cursor ignorando o `CLAUDE.md` e vazando *"cannot be cancelled"* no PATCH | Contexto ignorado mesmo com instrução explícita no prompt | Erro de contrato que nenhum teste verde acusou | Leitura do código contra a especificação |
-| Claude Code **e** Cursor checando R4 fora do lock (RF8) | Mesma sutileza de concorrência perdida pelas duas ferramentas | Testes verdes nas duas; a falha só aparece sob timing específico | Revisão humana + `code-review` no PR do RF8 |
+| Claude Code **e** Cursor checando R4 fora do lock (RF8) | Mesma sutileza de concorrência perdida pelas duas ferramentas | Testes verdes nas duas; a falha só aparece sob timing específico | Skill `code-review` no PR #14 |
+| A correção de IA para o caso acima também estava errada (usava um horário lido antes do lock) | Correção incompleta com teste de regressão verde | O teste injetava o horário à mão e não exercitava o fluxo real | 2ª rodada do `code-review`, que também achou a mesma brecha no cancelamento, presente desde a Sprint 1 |
 
-**Conclusão:** neste projeto, a falha típica do agente **não** foi o código que não roda. Foi o código que roda, passa nos testes e está sutilmente errado. É exatamente o tipo de erro que um humano tende a aprovar quando vê tudo verde.
+**Conclusão:** neste projeto, a falha típica do agente **não** foi o código que não roda. Foi o código que roda, passa nos testes e está sutilmente errado. Isso valeu inclusive para a *correção* de um bug apontado pela própria IA: a primeira versão do fix de R4 veio com um teste de regressão que falhava sem o fix e passava com ele, e ainda assim o fix estava incompleto. É exatamente o tipo de erro que um humano tende a aprovar quando vê tudo verde.
 
 ### Riscos destrutivos e como foram contidos
 
@@ -55,4 +56,4 @@ O fluxo deste projeto não é "a IA gera e o humano aceita". É "o humano especi
 
 **Por que testes automatizados não substituem a revisão:** em quase todos os casos da seção 1, a suíte inteira estava verde. Os testes provam o que alguém pensou em testar. A revisão encontra o que ninguém pensou. A especificação (SDD) é o que torna a revisão possível: sem um contrato escrito, não haveria contra o que comparar o código.
 
-**Limitação reconhecida:** este é um trabalho individual. A "revisão por par" foi a combinação de autor + revisão de IA (skill `code-review`) documentada em cada PR. Isso pega muitos erros (seis dos nove da Sprint 1), mas não substitui um segundo humano: o revisor de IA e o gerador de IA tendem a compartilhar os mesmos pontos cegos, como mostrou o R4 fora do lock, perdido por **duas** ferramentas de **fornecedores diferentes**.
+**Limitação reconhecida:** este é um trabalho individual. A "revisão por par" foi a combinação de autor + revisão de IA (skill `code-review`) documentada em cada PR. Isso pega muitos erros (sete dos nove da Sprint 1), mas não substitui um segundo humano: o revisor de IA e o gerador de IA tendem a compartilhar os mesmos pontos cegos, como mostrou o R4 fora do lock, perdido por **duas** ferramentas de **fornecedores diferentes**.
