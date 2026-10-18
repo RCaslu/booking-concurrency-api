@@ -7,10 +7,11 @@ Registro consolidado de todo erro encontrado durante o desenvolvimento: como foi
 | Mecanismo de detecção | Erros pegos | Observação |
 |---|---|---|
 | Suíte rodando contra Postgres real (Docker) | E1, E3 | Nenhum dos dois apareceria com SQLite ou mocks |
-| Revisão de IA (skill `code-review`) antes de cada PR | E2, E4, E5, E6, E7, E8, E9, E10, E11 | Os dois achados mais graves (E4, E5) eram races que os testes da época **não** cobriam |
-| Revisão cruzando a documentação com o código | E8, E12 | O spec prometia um comportamento que o código não tinha |
+| Revisão de IA (skill `code-review`) antes de cada PR | E2, E4, E5, E6, E7, E9, E10, E13 | Os achados mais graves (E4, E5, E10, E13) eram races que os testes da época **não** cobriam |
+| Revisão de IA cruzando a documentação com o código | E8, E11 | O spec prometia ou afirmava algo que o código ou os testes não tinham |
+| Leitura humana do código contra o contrato (experimento comparativo) | E12 | Os testes estavam verdes; o erro estava na mensagem do contrato | O spec prometia um comportamento que o código não tinha |
 
-Nenhum erro chegou à `main`: todos foram corrigidos na própria branch de feature, antes do merge em `develop`.
+Nenhum erro introduzido nas branches de feature chegou à `develop`: todos foram corrigidos antes do merge. A exceção é E13, uma brecha do cancelamento que existia desde a Sprint 1 e só foi encontrada na Sprint 2.
 
 ## Sprint 1 (Entrega 1)
 
@@ -30,7 +31,7 @@ Nenhum erro chegou à `main`: todos foram corrigidos na própria branch de featu
 | # | Erro | Detecção | Causa raiz | Correção |
 |---|---|---|---|---|
 | E3 | `test_concurrent_bookings_on_different_resources_all_succeed` dava 3/10 sucessos em vez de 10/10 | Suíte contra Postgres real | Todas as tentativas usavam o mesmo `requester_email` e esbarravam na cota R7 em vez de exercitar o lock por recurso | Um e-mail distinto por tentativa |
-| E9 | `test_cancel_race` e `test_concurrent_different_resources` só checavam o status HTTP | Revisão de IA, PR #4 | Violava a regra do `CLAUDE.md` de verificar o estado final no banco | Asserções via `db_session` ([`54c345c`](https://github.com/RCaslu/booking-concurrency-api/commit/54c345c)) |
+| E9 | Os testes de `tests/concurrency/test_cancel_race.py` e `test_concurrent_different_resources.py` só checavam o status HTTP | Revisão de IA, PR #4 | Violava a regra do `CLAUDE.md` de verificar o estado final no banco | Asserções via `db_session` ([`54c345c`](https://github.com/RCaslu/booking-concurrency-api/commit/54c345c)) |
 
 ### Erros de especificação (o loop de re-especificação)
 
@@ -46,7 +47,8 @@ O RF8 foi implementado duas vezes, uma pelo Claude Code e outra pelo Cursor, a p
 
 | # | Erro | Detecção | Causa raiz | Correção | Regressão coberta por |
 |---|---|---|---|---|---|
-| E10 | Remarcação podia mover uma reserva que **já tinha começado** | Revisão de IA, PR #14 (as duas ferramentas do experimento deixaram passar) | Checar e depois agir de novo: R4 era verificado numa leitura anterior ao lock, e o `UPDATE` só filtrava `ACTIVE` | `UPDATE ... WHERE status = 'ACTIVE' AND start_time > now` ([`fe7fe46`](https://github.com/RCaslu/booking-concurrency-api/commit/fe7fe46)) | `test_write_landing_after_start_is_rejected`, que **falha** se a condição for removida (teste de mutação manual) |
+| E10 | Remarcação podia mover uma reserva que **já tinha começado** | Revisão de IA, PR #14 (as duas ferramentas do experimento deixaram passar) | Checar e depois agir de novo: R4 era verificado numa leitura anterior ao lock, e o `UPDATE` só filtrava `ACTIVE` | **1ª tentativa, incompleta** ([`fe7fe46`](https://github.com/RCaslu/booking-concurrency-api/commit/fe7fe46)): passar ao `UPDATE` um `now` lido na aplicação, mas lido *antes* do lock. A segunda rodada de revisão mostrou que isso só repetia a checagem com um valor velho. **Correção final** ([`90cd165`](https://github.com/RCaslu/booking-concurrency-api/commit/90cd165)): `start_time > clock_timestamp()`, o relógio do banco no momento da escrita (`now()` não serve, porque devolve o início da transação) | `tests/integration/test_write_time_preconditions.py`, que **falha** se a condição for removida (teste de mutação manual) |
+| E13 | `cancel()` tinha a mesma brecha de E10 desde a Sprint 1 | Revisão de IA, 2ª rodada no PR #14, ao conferir o ADR-0005 contra o código | Mesmo padrão: R4 checado antes da escrita, `UPDATE` filtrando só `ACTIVE` | Mesma condição de E10 no `UPDATE` do cancelamento ([`90cd165`](https://github.com/RCaslu/booking-concurrency-api/commit/90cd165)) | `test_cancel_of_a_booking_that_already_started_is_rejected` |
 | E11 | O spec afirmava "provado" um comportamento sem teste (remarcação × cancelamento concorrente) | Revisão de IA, PR #14 | Documentação gerada pelo agente descrevendo garantias além do que os testes cobriam | Teste adicionado: `test_reschedule_racing_cancel_never_moves_a_cancelled_booking` | O próprio teste |
 | E12 | Na implementação do Cursor, um PATCH numa reserva iniciada respondia *"Booking cannot be cancelled after it has started."* | Leitura do código contra o contrato, no experimento | O agente não leu o `CLAUDE.md` (regra nova começa no domínio) e reaproveitou a função de cancelamento | Implementação descartada em favor da que tinha `ensure_reschedulable`; `AGENTS.md` adicionado para qualquer ferramenta ler as mesmas regras | n/a (código não mergeado) |
 
@@ -54,9 +56,13 @@ O RF8 foi implementado duas vezes, uma pelo Claude Code e outra pelo Cursor, a p
 
 | O que a especificação dizia | O que a revisão revelou | Como a especificação mudou |
 |---|---|---|
-| RF8: "só pode remarcar reserva ACTIVE que ainda não começou" | A regra estava certa, mas o *onde* ela é verificada importa: fora do lock, ela não vale sob concorrência | Item 9 do Refinamento: **as duas pré-condições de R4 são verificadas na própria escrita**, não numa leitura anterior |
+| R4 e RF8: "só se a reserva está ACTIVE e ainda não começou" | A regra estava certa, mas *onde* e *com qual relógio* ela é verificada importa: fora do lock, ou com um horário lido antes do lock, ela não vale sob concorrência | Item 9 do Refinamento: **"ainda não começou" é verificado pela própria escrita, com o relógio do banco no momento da escrita**, na remarcação e no cancelamento |
 | Item 8 do Refinamento: comportamento com cancelamento concorrente "provado" | Não havia teste | O teste foi escrito; a afirmação do spec passou a ter evidência |
 
 ## Padrão observado
 
-Os erros mais graves (E4, E5 e, na Sprint 2, E10) seguiram a mesma forma: **checar e depois agir sem atomicidade**. Depois de aparecer duas vezes, o padrão virou critério explícito de revisão: toda operação que lê um estado e decide com base nele precisa de lock ou de uma escrita condicional. O critério de aceitação do RF8 (issue #8) já exigia segurança sob concorrência desde o início, e mesmo assim as duas ferramentas reproduziram o padrão em E10. Isso mostra que escrever o critério na especificação não basta: ele precisa ser verificado na revisão.
+Os erros mais graves (E4, E5 e, na Sprint 2, E10 e E13) seguiram a mesma forma: **checar e depois agir sem atomicidade**. Depois de aparecer duas vezes, o padrão virou critério explícito de revisão: toda operação que lê um estado e decide com base nele precisa de lock ou de uma escrita condicional. O critério de aceitação do RF8 (issue #8) já exigia segurança sob concorrência desde o início, e mesmo assim as duas ferramentas reproduziram o padrão em E10. Isso mostra que escrever o critério na especificação não basta: ele precisa ser verificado na revisão.
+
+### O que E10 ensinou sobre a própria correção
+
+A primeira correção de E10 tinha um teste de regressão que **falhava sem a correção e passava com ela**, e mesmo assim a correção estava errada. O teste chamava o repositório com um `now` fabricado, então provava que a cláusula existia, não que o fluxo real rejeitava a escrita tardia. Um teste de mutação mostra que o teste depende do código, não que o código está certo.
