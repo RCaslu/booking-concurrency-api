@@ -133,6 +133,14 @@ O CI (GitHub Actions) roda a suíte completa contra Postgres em todo PR e todo p
 | [0004](docs/adr/0004-fastapi-sincrono.md) | FastAPI e SQLAlchemy síncronos | O gargalo é o lock do Postgres, não I/O. O modo síncrono deixa o teste com threads direto e previsível |
 | [0005](docs/adr/0005-invariantes-fora-de-r3.md) | Advisory lock para R7; pré-condição de R4 dentro do `UPDATE` | Nasceu de três bugs reais de checar e depois agir. Lock global e `SERIALIZABLE` foram descartados por serializar demais ou exigir retry |
 
+## Demonstração
+
+Com a API rodando, o script abaixo executa o fluxo principal contra o servidor real: cadastra uma sala, reserva, tenta um horário ocupado, consulta disponibilidade, remarca e cancela. No meio, dispara **20 reservas simultâneas para o mesmo horário** e mostra que exatamente 1 é gravada. Só precisa de `bash` e `curl`.
+
+```bash
+./scripts/demo.sh            # N=50 ./scripts/demo.sh para mais requisições simultâneas
+```
+
 ## Governança e histórico
 
 - **Branches:** `main` (protegida por conduta) ← `develop` ← `feature/*`. Nenhum commit direto em `main`.
@@ -148,6 +156,7 @@ O CI (GitHub Actions) roda a suíte completa contra Postgres em todo PR e todo p
 | [`docs/ai-comparativo.md`](docs/ai-comparativo.md) | Experimento Claude Code × Cursor na mesma tarefa, com resultados medidos |
 | [`docs/ai-analise-critica.md`](docs/ai-analise-critica.md) | Alucinação, vazamento de dados, propriedade intelectual e revisão humana |
 | [`docs/ai-usage.md`](docs/ai-usage.md) | Como o Claude Code foi usado no fluxo SDD |
+| [`docs/retrospectiva.md`](docs/retrospectiva.md) | Retrospectiva final: eficácia da IA, produtividade, dificuldades e governança |
 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) | Regras de contexto para os agentes de IA (o mesmo arquivo, lido por ferramentas diferentes) |
 
 ## Relato de experiência
