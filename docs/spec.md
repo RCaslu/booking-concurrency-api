@@ -199,7 +199,7 @@ Ver [ADR-0001](adr/0001-mecanismo-de-concorrencia.md), [ADR-0002](adr/0002-postg
 
 - **Sem autenticação** ([ADR-0003](adr/0003-sem-autenticacao-nesta-entrega.md)): qualquer chamador age em nome de qualquer `requester_email`.
 - **Sem paginação** em `GET /resources` e `GET /resources/{id}/bookings`.
-- **Schema criado por `create_all`, sem migrações versionadas:** uma mudança de schema exigiria introduzir Alembic.
+- **Schema criado por `create_all`, sem migrações versionadas:** `create_all` só cria tabelas que não existem e nunca altera as existentes. Um volume `pgdata` criado por uma versão anterior mantém o schema antigo. Isso aconteceu de fato: um volume da Entrega 1 ainda tinha a constraint `unique` em `resources.name`, removida no E6, e o cadastro de uma sala com nome repetido dava 500. Para a v1.0.0, a orientação é recriar o volume (`docker compose down -v`); uma evolução de schema com dados a preservar exigiria introduzir Alembic.
 - **Os ramos `except IntegrityError` dos repositórios** (a constraint barrando o que a checagem em Python deixou passar) não são exercitados pela suíte: o `FOR UPDATE` impede que o caso aconteça. A constraint em si é testada diretamente (RNF4).
 - **O ramo de `cancel()` em que o `UPDATE` condicional perde a corrida** (`rowcount = 0` com status já `CANCELLED`) só é executado quando o timing do teste de concorrência leva a esse caminho. Na maioria das execuções, os `DELETE` perdedores são barrados antes, pela checagem de domínio. O resultado observável (exatamente um 200) é testado de forma determinística; a cobertura dessa linha específica varia entre execuções.
 
