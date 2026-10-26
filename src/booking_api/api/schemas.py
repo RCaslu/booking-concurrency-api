@@ -8,9 +8,9 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class ResourceCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=120)
     capacity: int = Field(gt=0)
-    location: str | None = None
+    location: str | None = Field(default=None, max_length=255)
 
 
 class ResourceOut(BaseModel):

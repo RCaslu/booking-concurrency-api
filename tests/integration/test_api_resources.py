@@ -34,6 +34,16 @@ class TestCreateResource:
         assert second.status_code == 201
         assert first.json()["id"] != second.json()["id"]
 
+    def test_create_resource_with_name_longer_than_column_returns_422(self, client):
+        response = client.post("/resources", json={"name": "x" * 121, "capacity": 8})
+
+        assert response.status_code == 422
+
+    def test_create_resource_with_location_longer_than_column_returns_422(self, client):
+        response = client.post("/resources", json={"name": "Sala A", "capacity": 8, "location": "x" * 256})
+
+        assert response.status_code == 422
+
     def test_create_resource_without_location_is_allowed(self, client):
         response = client.post("/resources", json={"name": "Sala A", "capacity": 8})
 
