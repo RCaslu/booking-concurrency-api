@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -34,6 +35,26 @@ class TestCreateResource:
         assert second.status_code == 201
         assert first.json()["id"] != second.json()["id"]
 
+    def test_create_resource_with_empty_name_returns_422(self, client):
+        response = client.post("/resources", json={"name": "", "capacity": 8})
+
+        assert response.status_code == 422
+
+    def test_create_resource_with_capacity_beyond_integer_column_returns_422(self, client):
+        response = client.post("/resources", json={"name": "Sala A", "capacity": 2_147_483_648})
+
+        assert response.status_code == 422
+
+    def test_create_resource_with_name_longer_than_column_returns_422(self, client):
+        response = client.post("/resources", json={"name": "x" * 121, "capacity": 8})
+
+        assert response.status_code == 422
+
+    def test_create_resource_with_location_longer_than_column_returns_422(self, client):
+        response = client.post("/resources", json={"name": "Sala A", "capacity": 8, "location": "x" * 256})
+
+        assert response.status_code == 422
+
     def test_create_resource_without_location_is_allowed(self, client):
         response = client.post("/resources", json={"name": "Sala A", "capacity": 8})
 
@@ -62,3 +83,30 @@ class TestListResources:
         assert response.status_code == 200
         ids = [r["id"] for r in response.json()]
         assert resource["id"] in ids
+
+
+class TestListBookingsForResource:
+    def test_lists_bookings_of_the_resource_ordered_by_start(self, client, resource_id, future_slot):
+        later_start = future_slot.start + timedelta(hours=3)
+        for email, start in [("late@example.com", later_start), ("early@example.com", future_slot.start)]:
+            body = {"requester_email": email, "start_time": start.isoformat(), "end_time": (start + timedelta(hours=1)).isoformat()}
+            assert client.post(f"/resources/{resource_id}/bookings", json=body).status_code == 201
+
+        response = client.get(f"/resources/{resource_id}/bookings")
+
+        assert response.status_code == 200
+        assert [b["requester_email"] for b in response.json()] == ["early@example.com", "late@example.com"]
+
+    def test_unknown_resource_returns_404(self, client):
+        response = client.get(f"/resources/{uuid4()}/bookings")
+
+        assert response.status_code == 404
+        assert response.json()["error_code"] == "RESOURCE_NOT_FOUND"
+
+
+class TestHealth:
+    def test_health_returns_ok(self, client):
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}

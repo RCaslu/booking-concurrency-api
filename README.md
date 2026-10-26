@@ -78,16 +78,15 @@ sequenceDiagram
 
 ## Como rodar
 
-Pré-requisito: Docker com Docker Compose. Python 3.12 só é necessário para rodar os testes fora de container.
+Pré-requisito: Docker com Docker Compose. Não é preciso instalar Python nem Postgres.
 
 ```bash
 git clone https://github.com/RCaslu/booking-concurrency-api.git
 cd booking-concurrency-api
-docker compose up -d db
-docker compose up api
+docker compose up -d --build --wait api
 ```
 
-A API sobe em `http://localhost:8020`. A porta `8000` padrão do Uvicorn é mapeada para `8020` no host, para não conflitar com outros serviços (ver `docker-compose.yml`).
+Esse único comando constrói a imagem, sobe o Postgres, espera ele ficar saudável, sobe a API e só retorna quando `GET /health` responde. A API fica em `http://localhost:8020`, com a documentação interativa (Swagger) em `http://localhost:8020/docs`.
 
 ```bash
 curl -X POST http://localhost:8020/resources \
@@ -95,21 +94,43 @@ curl -X POST http://localhost:8020/resources \
   -d '{"name": "Sala A", "capacity": 8}'
 ```
 
-## Como rodar os testes
+Para parar: `docker compose down` (os dados ficam no volume `pgdata`; use `docker compose down -v` para apagá-los).
 
-Totalmente em container, sem instalar nada além do Docker:
+## Variáveis de ambiente
+
+Nada é obrigatório: sem configuração, tudo sobe com os padrões abaixo. Para mudar, copie o modelo e edite:
 
 ```bash
-docker compose up -d db-test
+cp .env.example .env
+```
+
+O `docker compose` lê o `.env` automaticamente, e a aplicação (`pydantic-settings`) também. O `.env` está no `.gitignore`.
+
+| Variável | Padrão | Para que serve |
+|---|---|---|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `booking` / `booking` | Credenciais dos Postgres de desenvolvimento e de teste. São só para uso local; troque se expuser as portas. Use só caracteres seguros em URL (letras, números, `-`, `_`), porque elas entram direto na URL de conexão. Para trocar depois que o volume já existe, rode `docker compose down -v` |
+| `POSTGRES_DB` | `booking` | Nome do banco da aplicação (o de teste é sempre `booking_test`) |
+| `API_PORT` | `8020` | Porta da API no host (dentro do container é `8000`) |
+| `DB_PORT` / `DB_TEST_PORT` | `5432` / `5433` | Portas dos dois Postgres no host |
+| `DATABASE_URL` | `postgresql+psycopg://booking:booking@localhost:5432/booking` | URL do banco quando a API roda **fora** de container. Dentro do Compose ela é montada a partir das variáveis acima |
+| `TEST_DATABASE_URL` | `postgresql+psycopg://booking:booking@localhost:5433/booking_test` | URL do banco de teste para rodar o `pytest` fora de container. **Lida só do ambiente do shell (`export`), não do `.env`.** Dentro do Compose, ela é montada a partir das variáveis acima |
+
+## Como rodar os testes
+
+Um comando, totalmente em container:
+
+```bash
 docker compose run --rm --build test
 ```
 
-Ou localmente, com um virtualenv:
+Ele sobe o Postgres de teste, espera ficar saudável e roda a suíte inteira (unit, integration e concurrency) com o **relatório de cobertura** no final (`pytest-cov`, configurado no `pytest.ini`).
+
+Localmente, com um virtualenv:
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-docker compose up -d db-test
+docker compose up -d --wait db-test
 PYTHONPATH=src pytest -v
 ```
 
@@ -121,7 +142,7 @@ PYTHONPATH=src pytest -m integration    # via API + Postgres real
 PYTHONPATH=src pytest -m concurrency    # a prova de não-double-booking
 ```
 
-O CI (GitHub Actions) roda a suíte completa contra Postgres em todo PR e todo push para `develop` e `main`. O log da última execução completa está em [`docs/test-evidence/`](docs/test-evidence/).
+O CI (GitHub Actions) roda a suíte completa, com cobertura, contra Postgres em todo PR e todo push para `develop` e `main`. O log e o relatório de cobertura da última execução completa estão em [`docs/test-evidence/`](docs/test-evidence/).
 
 ## Decisões de projeto (ADRs)
 
@@ -132,6 +153,16 @@ O CI (GitHub Actions) roda a suíte completa contra Postgres em todo PR e todo p
 | [0003](docs/adr/0003-sem-autenticacao-nesta-entrega.md) | Sem autenticação | Fora do foco (a garantia de concorrência). O schema já isola `requester_email` para adicionar autenticação depois |
 | [0004](docs/adr/0004-fastapi-sincrono.md) | FastAPI e SQLAlchemy síncronos | O gargalo é o lock do Postgres, não I/O. O modo síncrono deixa o teste com threads direto e previsível |
 | [0005](docs/adr/0005-invariantes-fora-de-r3.md) | Advisory lock para R7; pré-condição de R4 dentro do `UPDATE` | Nasceu de três bugs reais de checar e depois agir. Lock global e `SERIALIZABLE` foram descartados por serializar demais ou exigir retry |
+
+## Demonstração
+
+Com a API rodando, o script abaixo executa o fluxo principal contra o servidor real: cadastra uma sala, reserva, tenta um horário ocupado, consulta disponibilidade, remarca e cancela. No meio, dispara **20 reservas simultâneas para o mesmo horário** e mostra que exatamente 1 é gravada. Só precisa de `bash` e `curl`.
+
+```bash
+./scripts/demo.sh            # N=50 ./scripts/demo.sh para mais requisições simultâneas
+```
+
+Se o cadastro da sala responder 500 numa máquina que já rodou uma versão antiga do projeto, o volume `pgdata` guarda um schema velho: o schema é criado com `create_all`, que não altera tabelas existentes (ver "Limites conhecidos" no [spec](docs/spec.md#limites-conhecidos-da-v100)). Recrie com `docker compose down -v`.
 
 ## Governança e histórico
 
@@ -148,6 +179,7 @@ O CI (GitHub Actions) roda a suíte completa contra Postgres em todo PR e todo p
 | [`docs/ai-comparativo.md`](docs/ai-comparativo.md) | Experimento Claude Code × Cursor na mesma tarefa, com resultados medidos |
 | [`docs/ai-analise-critica.md`](docs/ai-analise-critica.md) | Alucinação, vazamento de dados, propriedade intelectual e revisão humana |
 | [`docs/ai-usage.md`](docs/ai-usage.md) | Como o Claude Code foi usado no fluxo SDD |
+| [`docs/retrospectiva.md`](docs/retrospectiva.md) | Retrospectiva final: eficácia da IA, produtividade, dificuldades e governança |
 | [`CLAUDE.md`](CLAUDE.md) / [`AGENTS.md`](AGENTS.md) | Regras de contexto para os agentes de IA (o mesmo arquivo, lido por ferramentas diferentes) |
 
 ## Relato de experiência
