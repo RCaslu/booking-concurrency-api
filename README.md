@@ -108,12 +108,12 @@ O `docker compose` lê o `.env` automaticamente, e a aplicação (`pydantic-sett
 
 | Variável | Padrão | Para que serve |
 |---|---|---|
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `booking` / `booking` | Credenciais dos Postgres de desenvolvimento e de teste. São só para uso local; troque se expuser as portas |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | `booking` / `booking` | Credenciais dos Postgres de desenvolvimento e de teste. São só para uso local; troque se expuser as portas. Use só caracteres seguros em URL (letras, números, `-`, `_`), porque elas entram direto na URL de conexão. Para trocar depois que o volume já existe, rode `docker compose down -v` |
 | `POSTGRES_DB` | `booking` | Nome do banco da aplicação (o de teste é sempre `booking_test`) |
 | `API_PORT` | `8020` | Porta da API no host (dentro do container é `8000`) |
 | `DB_PORT` / `DB_TEST_PORT` | `5432` / `5433` | Portas dos dois Postgres no host |
 | `DATABASE_URL` | `postgresql+psycopg://booking:booking@localhost:5432/booking` | URL do banco quando a API roda **fora** de container. Dentro do Compose ela é montada a partir das variáveis acima |
-| `TEST_DATABASE_URL` | `postgresql+psycopg://booking:booking@localhost:5433/booking_test` | URL do banco de teste para rodar o `pytest` fora de container |
+| `TEST_DATABASE_URL` | `postgresql+psycopg://booking:booking@localhost:5433/booking_test` | URL do banco de teste para rodar o `pytest` fora de container. **Lida só do ambiente do shell (`export`), não do `.env`.** Dentro do Compose, ela é montada a partir das variáveis acima |
 
 ## Como rodar os testes
 
