@@ -7,7 +7,12 @@ N="${N:-20}"
 iso() { date -u -d "+$1 hours" +%Y-%m-%dT%H:00:00Z 2>/dev/null || date -u -v+"$1"H +%Y-%m-%dT%H:00:00Z; }
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
 call() { curl -s -w '\n-> HTTP %{http_code}\n' "$@"; }
-json_id() { sed -E 's/.*"id":"([^"]+)".*/\1/'; }
+json_id() {
+  local id
+  id=$(sed -nE 's/^\{"id":"([0-9a-f-]{36})".*/\1/p')
+  [[ -n "$id" ]] || { echo "falha: a resposta nao trouxe um id (a API esta no ar? veja a resposta acima)" >&2; exit 1; }
+  echo "$id"
+}
 
 START=$(iso 24)
 END=$(iso 25)
@@ -44,8 +49,8 @@ CODES=$(seq 1 "$N" | xargs -P "$N" -I{} curl -s -o /dev/null -w '%{http_code}\n'
 echo "201 (sucesso):  $(grep -c '^201$' <<<"$CODES" || true)"
 echo "409 (conflito): $(grep -c '^409$' <<<"$CODES" || true)"
 echo "outros:         $(grep -vcE '^(201|409)$' <<<"$CODES" || true)"
-ACTIVE=$(curl -s "$API/resources/$RID/bookings" | grep -o "\"start_time\":\"[^\"]*\"" | grep -c "${RACE_START%Z}" || true)
-echo "reservas gravadas no horario disputado: $ACTIVE (esperado: exatamente 1)"
+ACTIVE=$(curl -s "$API/resources/$RID/availability?start=$RACE_START&end=$RACE_END" | grep -o '"requester_email"' | grep -c . || true)
+echo "reservas ativas no horario disputado: $ACTIVE (esperado: exatamente 1)"
 
 step "7. Remarcar a reserva da Ana para depois (PATCH)"
 NEW_START=$(iso 48)

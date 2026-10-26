@@ -39,7 +39,7 @@ Mesmo assim, o saldo foi claramente positivo. Um projeto com garantia de concorr
 
 ## Lições sobre governança
 
-- **O fluxo `feature/*` → PR → CI → `develop` → `main` valeu mesmo sozinho.** Todos os 15 erros foram pegos e corrigidos numa branch de feature, antes do merge. O único erro que já estava na `main` (E13, presente desde a Sprint 1) também foi encontrado e corrigido por esse fluxo.
+- **O fluxo `feature/*` → PR → CI → `develop` → `main` valeu mesmo sozinho, mas não é infalível.** Todo erro encontrado numa branch foi corrigido antes do merge. Ainda assim, três chegaram à `main` sem ser vistos (E13, E14 e E15) e só foram pegos em sprints posteriores, por uma revisão mais ampla, pela cobertura e pela conferência do spec contra o código. Cada mecanismo novo de verificação achou erros que os anteriores tinham deixado passar.
 - **A seção "AI Review" em cada PR transformou revisão em registro.** Ela documenta também os achados *não* corrigidos e o porquê, o que tornou visíveis decisões que, de outro modo, ficariam só na cabeça do autor.
 - **Issues e milestones por sprint deram rastreabilidade de ponta a ponta:** requisito → issue → branch → PR com revisão → teste → release.
 - **O limite do trabalho individual:** a revisão por IA não substitui um segundo humano. O revisor e o gerador de IA compartilham pontos cegos (o R4 fora do lock passou por duas ferramentas). Numa equipe, a primeira mudança seria exigir aprovação humana em todo PR, além da revisão de IA.
