@@ -2,7 +2,7 @@
 
 Sistema de reservas de salas de reunião com garantia estrutural contra double-booking sob requisições concorrentes. A especificação completa (SDD) está em [`docs/spec.md`](docs/spec.md).
 
-**Bootcamp III, Entrega 2** (publicação, refinamento por testes e análise crítica do uso de IA). Trabalho individual.
+**Versão 1.0.0**: [release](https://github.com/RCaslu/booking-concurrency-api/releases/tag/v1.0.0) final do Bootcamp III (Entrega 3). Trabalho individual.
 
 ## O problema em uma frase
 
@@ -166,9 +166,9 @@ Se o cadastro da sala responder 500 numa máquina que já rodou uma versão anti
 
 ## Governança e histórico
 
-- **Branches:** `main` (protegida por conduta) ← `develop` ← `feature/*`. Nenhum commit direto em `main`.
-- **Sprints:** Sprint 1 = PRs [#1](https://github.com/RCaslu/booking-concurrency-api/pull/1) a [#6](https://github.com/RCaslu/booking-concurrency-api/pull/6). Sprint 2 = milestone [Entrega 2](https://github.com/RCaslu/booking-concurrency-api/milestone/1), issues #8 a #13, cada uma fechada por um PR.
-- **Revisão:** cada PR de feature ou de documentação tem uma seção "AI Review" com os achados da skill `code-review` (corrigidos ou não, com justificativa) e passa pelo CI antes do merge (a exceção é o PR #7, que só alterou o `.gitignore`). Como o trabalho é individual, a revisão por IA documentada faz o papel da revisão por par. As limitações disso estão discutidas em [`docs/ai-analise-critica.md`](docs/ai-analise-critica.md#4-a-centralidade-da-homologação-humana-no-fluxo-sdd).
+- **Branches:** `main` ← `develop` ← `feature/*`. A `main` é protegida no GitHub: só aceita merge por PR, com o check `test` do CI verde e a branch atualizada, inclusive para administradores, e sem force-push.
+- **Sprints:** Sprint 1 = PRs [#1](https://github.com/RCaslu/booking-concurrency-api/pull/1) a [#6](https://github.com/RCaslu/booking-concurrency-api/pull/6). Sprint 2 = milestone [Entrega 2](https://github.com/RCaslu/booking-concurrency-api/milestone/1), issues #8 a #13. Sprint 3 = milestone [Entrega 3](https://github.com/RCaslu/booking-concurrency-api/milestone/2), issues #21 a #25. Cada issue é fechada por um PR.
+- **Revisão:** cada PR de feature ou de documentação tem uma seção "AI Review" com os achados da skill `code-review` (corrigidos ou não, com justificativa) e passa pelo CI (e pelo SonarCloud) antes do merge. As exceções são os PRs #7, #19 e #30, que só alteraram o `.gitignore` ou logs de teste e justificam isso na descrição. Como o trabalho é individual, a revisão por IA documentada faz o papel da revisão por par. As limitações disso estão discutidas em [`docs/ai-analise-critica.md`](docs/ai-analise-critica.md#4-a-centralidade-da-homologação-humana-no-fluxo-sdd).
 
 ## Documentação
 
