@@ -9,7 +9,9 @@ Registro consolidado de todo erro encontrado durante o desenvolvimento: como foi
 | Suíte rodando contra Postgres real (Docker) | E1, E3 | Nenhum dos dois apareceria com SQLite ou mocks |
 | Revisão de IA (skill `code-review`) antes de cada PR | E2, E4, E5, E6, E7, E9, E10, E13 | Os achados mais graves (E4, E5, E10, E13) eram races que os testes da época **não** cobriam |
 | Revisão de IA cruzando a documentação com o código | E8, E11 | O spec prometia ou afirmava algo que o código ou os testes não tinham |
-| Leitura humana do código contra o contrato (experimento comparativo) | E12 | Os testes estavam verdes; o erro estava na mensagem do contrato | O spec prometia um comportamento que o código não tinha |
+| Leitura humana do código contra o contrato (experimento comparativo) | E12 | Os testes estavam verdes; o erro estava na mensagem do contrato |
+| Conferência do modelo de dados contra o contrato (spec As-Built) | E14 | O limite existia no banco, mas não no contrato da API |
+| Relatório de cobertura (`pytest-cov`) | E15 | Caminhos simples sem teste nenhum, escondidos atrás de uma suíte grande e verde |
 
 Nenhum erro introduzido nas branches de feature chegou à `develop`: todos foram corrigidos antes do merge. A exceção é E13, uma brecha do cancelamento que existia desde a Sprint 1 e só foi encontrada na Sprint 2.
 
