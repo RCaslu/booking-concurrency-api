@@ -1,77 +1,88 @@
-## SDD — Booking Concurrency API
+# SDD As-Built: Booking Concurrency API v1.0.0
 
-Especificação técnica do problema, requisitos, regras de negócio e contratos de entrada/saída. Este documento é o ponto de partida (Spec-Driven Development): a implementação em `src/` é derivada dele, e ajustes feitos durante o desenvolvimento (a partir de testes ou revisão) são registrados na seção Refinamento, no final.
+Especificação técnica **definitiva**, descrevendo o sistema exatamente como foi entregue na release `v1.0.0`. Cada contrato, regra e componente abaixo foi conferido contra o código desta versão, e cada requisito aponta para os testes que o provam ([rastreabilidade](#rastreabilidade-requisito--teste)).
+
+O documento nasceu como especificação de entrada do SDD (Entrega 1) e foi sendo ajustado conforme os testes e as revisões revelavam lacunas. Essas mudanças estão registradas, em ordem, na seção [Refinamento](#refinamento), no final.
 
 ## O problema
 
-Sistema de reserva de salas de reunião que precisa garantir, sob requisições concorrentes, que **duas reservas nunca ocupem a mesma sala no mesmo intervalo de tempo** — o clássico problema de double-booking de sistemas de agendamento (Google Calendar, Calendly). A garantia precisa ser estrutural (não depender de sorte de timing) e comprovável por teste automatizado determinístico.
+Sistema de reserva de salas de reunião que precisa garantir, sob requisições concorrentes, que **duas reservas nunca ocupem a mesma sala no mesmo intervalo de tempo**. É o clássico problema de double-booking de sistemas de agendamento (Google Calendar, Calendly). A garantia precisa ser estrutural, sem depender de sorte de timing, e comprovável por teste automatizado determinístico.
 
-Domínio escolhido — salas de reunião, não vagas de estacionamento — porque o conceito de intervalo `[início, fim)` é fácil de explicar e naturalmente gera casos de borda inequívocos (uma reunião que termina às 15h não conflita com outra que começa às 15h).
+O domínio escolhido foi salas de reunião, e não vagas de estacionamento, porque o conceito de intervalo `[início, fim)` é fácil de explicar e gera casos de borda inequívocos: uma reunião que termina às 15h não conflita com outra que começa às 15h.
 
 ## Requisitos funcionais
 
-| # | Requisito |
-|---|---|
-| RF1 | Cadastrar um recurso (sala) com nome, capacidade e localização |
-| RF2 | Listar recursos e consultar um recurso específico |
-| RF3 | Consultar disponibilidade de um recurso num intervalo de tempo |
-| RF4 | Criar uma reserva para um recurso, num intervalo de tempo, em nome de um solicitante |
-| RF5 | Listar reservas de um recurso |
-| RF6 | Consultar uma reserva específica |
-| RF7 | Cancelar uma reserva antes do seu início |
-| RF8 | Remarcar uma reserva antes do seu início para uma nova janela de tempo (mesmas pré-condições de R4; nova janela sujeita a R1, R2, R3 e R6 — a própria reserva não conta como conflito) |
+| # | Requisito | Endpoint |
+|---|---|---|
+| RF1 | Cadastrar um recurso (sala) com nome, capacidade e localização | `POST /resources` |
+| RF2 | Listar recursos e consultar um recurso específico | `GET /resources`, `GET /resources/{id}` |
+| RF3 | Consultar disponibilidade de um recurso num intervalo de tempo | `GET /resources/{id}/availability` |
+| RF4 | Criar uma reserva para um recurso, num intervalo de tempo, em nome de um solicitante | `POST /resources/{id}/bookings` |
+| RF5 | Listar reservas de um recurso | `GET /resources/{id}/bookings` |
+| RF6 | Consultar uma reserva específica | `GET /bookings/{id}` |
+| RF7 | Cancelar uma reserva antes do seu início | `DELETE /bookings/{id}` |
+| RF8 | Remarcar uma reserva antes do seu início para uma nova janela (mesmas pré-condições de R4; nova janela sujeita a R1, R2, R3 e R6; a própria reserva não conta como conflito) | `PATCH /bookings/{id}` |
 
 ## Requisitos não-funcionais
 
-| # | Requisito |
-|---|---|
-| RNF1 | **Correção sob concorrência**: N requisições simultâneas para o mesmo recurso/horário devem resultar em exatamente 1 sucesso, sempre — comprovado por teste automatizado, não por inspeção manual |
-| RNF2 | Ambiente reproduzível via Docker (`docker compose up`) — sem "funciona na minha máquina" |
-| RNF3 | Erros de negócio devem retornar códigos HTTP corretos e um corpo de erro estruturado (`error_code`, `message`), nunca um stack trace |
-| RNF4 | A regra de não-sobreposição deve ser garantida mesmo que a camada de aplicação tenha um bug — a garantia final vive no schema do banco, não só no código Python |
+| # | Requisito | Como foi atendido |
+|---|---|---|
+| RNF1 | **Correção sob concorrência:** N requisições simultâneas para o mesmo recurso e horário resultam em exatamente 1 sucesso, sempre | `SELECT ... FOR UPDATE` no recurso + `ExcludeConstraint`; provado por testes com `threading.Barrier` contra Postgres real |
+| RNF2 | Ambiente reproduzível via Docker | `docker compose up -d --build --wait api` sobe tudo; `docker compose run --rm --build test` roda o harness |
+| RNF3 | Erros de negócio com código HTTP correto e corpo estruturado, nunca stack trace | Um único exception handler mapeia cada `DomainError` para HTTP (ver [Formato de erro](#formato-de-erro)) |
+| RNF4 | A não-sobreposição vale mesmo com bug na aplicação | `EXCLUDE USING gist` na tabela `bookings`; testada diretamente, inserindo linhas sem passar pela aplicação |
 
 ## Regras de negócio
 
-| # | Regra | Categoria |
+| # | Regra | Onde é verificada |
 |---|---|---|
-| R1 | `end_time` deve ser estritamente posterior a `start_time` | Validação |
-| R2 | `start_time` não pode estar no passado | Validação |
-| R3 | **(núcleo)** Duas reservas `ACTIVE` do mesmo recurso não podem ter intervalos `[start, end)` sobrepostos | Concorrência |
-| R4 | Cancelamento só é permitido se a reserva está `ACTIVE` e ainda não começou (`now < start_time`) | Negócio |
-| R5 | `resource_id` referenciado numa reserva precisa existir | Referencial |
-| R6 | Duração da reserva entre 15 minutos e 4 horas | Negócio |
-| R7 | Máximo de 3 reservas `ACTIVE` simultâneas por `requester_email` | Negócio |
+| R1 | `end_time` estritamente posterior a `start_time` | `validate_time_window` (domínio) + `CHECK ck_booking_end_after_start` (banco) |
+| R2 | `start_time` não pode estar no passado | `validate_time_window` |
+| R3 | **(núcleo)** Duas reservas `ACTIVE` do mesmo recurso não podem ter intervalos `[start, end)` sobrepostos | Checagem sob `FOR UPDATE` no repositório + `EXCLUDE no_overlapping_active_bookings` (banco) |
+| R4 | Cancelar ou remarcar só se a reserva está `ACTIVE` e ainda não começou | `ensure_cancellable`/`ensure_reschedulable` (domínio) **e** na própria escrita: `UPDATE ... WHERE status = 'ACTIVE' AND start_time > clock_timestamp()` |
+| R5 | O `resource_id` de uma reserva precisa existir | Service (404) + `FOREIGN KEY` |
+| R6 | Duração entre 15 minutos e 4 horas (inclusive) | `validate_time_window` (`MIN_BOOKING_DURATION`, `MAX_BOOKING_DURATION`) |
+| R7 | Máximo de 3 reservas `ACTIVE` por `requester_email` | `check_booking_quota` sob `pg_advisory_xact_lock(hashtext(email))` |
 
-Regra de sobreposição (R3), formalmente: dados os intervalos `A=[a_start, a_end)` e `B=[b_start, b_end)`, eles conflitam se e somente se `a_start < b_end AND a_end > b_start`. Implementada em `overlaps()` (`src/booking_api/domain/rules.py`).
+Regra de sobreposição (R3), formalmente: os intervalos `A=[a_start, a_end)` e `B=[b_start, b_end)` conflitam se e somente se `a_start < b_end AND a_end > b_start`. Está implementada em `overlaps()` (`domain/rules.py`) e, no banco, como `tstzrange(start_time, end_time, '[)') && ...`.
+
+**Consulta de disponibilidade (RF3)** usa uma validação mais leve, `validate_query_window`: só exige timezone e `end > start`. R2 e R6 não se aplicam, porque consultar o passado ou uma janela longa é legítimo.
 
 ## Contratos de entrada/saída
 
-Todas as datas em ISO-8601, **obrigatoriamente com timezone** (UTC recomendado) — um datetime *naive* é rejeitado como `INVALID_TIME_WINDOW` (ver Refinamento).
+Todas as datas em ISO-8601, **obrigatoriamente com timezone** (UTC recomendado). Um datetime *naive* é rejeitado com `INVALID_TIME_WINDOW`.
 
 ### `Resource`
 
-```json
-{
-  "id": "uuid",
-  "name": "string",
-  "capacity": "int > 0",
-  "location": "string | null",
-  "created_at": "datetime"
-}
-```
+| Campo | Tipo | Regras de entrada (`POST`) |
+|---|---|---|
+| `id` | uuid | gerado |
+| `name` | string | obrigatório, até 120 caracteres; não precisa ser único |
+| `capacity` | int | obrigatório, `> 0` |
+| `location` | string \| null | opcional, até 255 caracteres |
+| `created_at` | datetime | gerado pelo banco |
 
 ### `Booking`
 
+| Campo | Tipo | Regras de entrada |
+|---|---|---|
+| `id` | uuid | gerado |
+| `resource_id` | uuid | vem da rota |
+| `requester_email` | email | obrigatório no `POST`, validado como e-mail |
+| `start_time`, `end_time` | datetime (com timezone) | obrigatórios; R1, R2 e R6 |
+| `status` | `ACTIVE` \| `CANCELLED` | gerado |
+| `created_at` | datetime | gerado pelo banco |
+| `cancelled_at` | datetime \| null | preenchido no cancelamento |
+
+### `Availability`
+
 ```json
 {
-  "id": "uuid",
   "resource_id": "uuid",
-  "requester_email": "email",
-  "start_time": "datetime (tz-aware)",
-  "end_time": "datetime (tz-aware)",
-  "status": "ACTIVE | CANCELLED",
-  "created_at": "datetime",
-  "cancelled_at": "datetime | null"
+  "query_start": "datetime",
+  "query_end": "datetime",
+  "is_available": true,
+  "conflicting_bookings": ["Booking (só ACTIVE que sobrepõem a janela)"]
 }
 ```
 
@@ -79,38 +90,115 @@ Todas as datas em ISO-8601, **obrigatoriamente com timezone** (UTC recomendado) 
 
 | Método | Rota | Sucesso | Erros |
 |---|---|---|---|
-| POST | `/resources` | 201 `Resource` | 422 (payload inválido) |
-| GET | `/resources` | 200 `Resource[]` | — |
+| POST | `/resources` | 201 `Resource` | 422 (validação de payload) |
+| GET | `/resources` | 200 `Resource[]`, ordenado por `created_at` | n/a |
 | GET | `/resources/{id}` | 200 `Resource` | 404 `RESOURCE_NOT_FOUND` |
-| GET | `/resources/{id}/availability?start&end` | 200 `Availability` | 404, 422 `INVALID_TIME_WINDOW` |
+| GET | `/resources/{id}/availability?start=&end=` | 200 `Availability` | 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_TIME_WINDOW` |
 | POST | `/resources/{id}/bookings` | 201 `Booking` | 404 `RESOURCE_NOT_FOUND`, 422 `INVALID_TIME_WINDOW`, 409 `OVERLAPPING_BOOKING`, 409 `BOOKING_QUOTA_EXCEEDED` |
-| GET | `/resources/{id}/bookings` | 200 `Booking[]` | 404 |
+| GET | `/resources/{id}/bookings` | 200 `Booking[]` (todas, inclusive canceladas), ordenado por `start_time` | 404 `RESOURCE_NOT_FOUND` |
 | GET | `/bookings/{id}` | 200 `Booking` | 404 `BOOKING_NOT_FOUND` |
-| DELETE | `/bookings/{id}` | 200 `Booking` (status=CANCELLED) | 404, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
-| PATCH | `/bookings/{id}` (corpo `{start_time, end_time}`) | 200 `Booking` (atualizado) | 404 `BOOKING_NOT_FOUND`, 422 `INVALID_TIME_WINDOW`, 409 `OVERLAPPING_BOOKING`, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
+| PATCH | `/bookings/{id}`, corpo `{start_time, end_time}` | 200 `Booking` atualizado | 404 `BOOKING_NOT_FOUND`, 422 `INVALID_TIME_WINDOW`, 409 `OVERLAPPING_BOOKING`, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
+| DELETE | `/bookings/{id}` | 200 `Booking` com `status=CANCELLED` | 404 `BOOKING_NOT_FOUND`, 409 `BOOKING_ALREADY_STARTED`, 409 `BOOKING_ALREADY_CANCELLED` |
+| GET | `/health` | 200 `{"status": "ok"}` | n/a (usado pelo healthcheck do container) |
+
+Em toda rota com `{id}`, um id que não é UUID responde 422 de validação.
+
+**Ordem das verificações** na criação de reserva: janela (R1, R2, R6) → recurso existe (R5) → advisory lock do solicitante → cota (R7) → `FOR UPDATE` no recurso → sobreposição (R3) → `INSERT`. Na remarcação: janela → reserva existe → R4 → `FOR UPDATE` no recurso → sobreposição excluindo a própria reserva → `UPDATE` condicionado a R4.
 
 ### Formato de erro
 
+Há **dois** formatos, e a diferença é intencional:
+
+**Erro de regra de negócio** (todo `DomainError`), com `error_code` estável para o cliente tratar:
+
 ```json
-{ "error_code": "OVERLAPPING_BOOKING", "message": "string", "details": null }
+{ "error_code": "OVERLAPPING_BOOKING", "message": "Resource is already booked for part of this time window.", "details": null }
 ```
 
-## Decomposição em componentes testáveis
+**Erro de validação de payload** (tipo errado, campo ausente, e-mail inválido, `capacity <= 0`, texto acima do limite, UUID inválido na rota): formato padrão do FastAPI, status 422:
 
-```
-domain/       Entidades e regras puras (R1-R7). Zero I/O, zero dependência externa.
-application/  BookingService/ResourceService — orquestram domain + um Protocol de
-              repositório (ports.py), sem depender de SQLAlchemy concretamente.
-infra/        Implementação real dos repositórios (Postgres/SQLAlchemy) e a
-              garantia estrutural de R3 (EXCLUDE constraint).
-api/          FastAPI — schemas, rotas, tradução de exceções de domínio para HTTP.
+```json
+{ "detail": [ { "type": "greater_than", "loc": ["body", "capacity"], "msg": "Input should be greater than 0", "input": 0 } ] }
 ```
 
-Cada camada é testável isoladamente: `domain/` sem nenhuma infraestrutura (`tests/unit/test_rules.py`), `application/` com um repositório fake em memória (`tests/unit/test_booking_service.py`), `infra/`+`api/` com Postgres real via Docker (`tests/integration/`, `tests/concurrency/`).
+## Modelo de dados
+
+Criado por `infra/bootstrap.py::init_db`, que habilita a extensão `btree_gist` e cria as tabelas.
+
+**`resources`**: `id uuid PK`, `name varchar(120) NOT NULL`, `capacity int NOT NULL`, `location varchar(255)`, `created_at timestamptz DEFAULT now()`.
+
+**`bookings`**: `id uuid PK`, `resource_id uuid NOT NULL FK → resources`, `requester_email varchar(255) NOT NULL` (indexado, por causa da cota R7), `start_time`/`end_time timestamptz NOT NULL`, `status varchar(20) NOT NULL`, `created_at timestamptz DEFAULT now()`, `cancelled_at timestamptz`.
+
+| Constraint | Definição | Garante |
+|---|---|---|
+| `ck_booking_end_after_start` | `CHECK (end_time > start_time)` | R1 |
+| `no_overlapping_active_bookings` | `EXCLUDE USING gist (resource_id WITH =, tstzrange(start_time, end_time, '[)') WITH &&) WHERE (status = 'ACTIVE')` | R3 / RNF4 |
+
+## Componentes
+
+```
+src/booking_api/
+  config.py                 Settings (DATABASE_URL via ambiente ou .env)
+  domain/
+    entities.py             Resource, Booking, BookingStatus
+    rules.py                overlaps, validate_time_window, validate_query_window,
+                            check_booking_quota, ensure_cancellable, ensure_reschedulable
+    exceptions.py           DomainError e um subtipo por error_code
+  application/
+    ports.py                ResourceRepository, BookingRepository (Protocol)
+    booking_service.py      BookingService: criação, cancelamento, remarcação, consultas
+    resource_service.py     ResourceService
+  infra/
+    db.py                   engine e SessionLocal
+    models.py               ResourceModel, BookingModel (+ constraints)
+    repositories.py         SqlAlchemy*Repository: FOR UPDATE, advisory lock, UPDATEs condicionais
+    bootstrap.py            init_db / drop_db
+  api/
+    main.py                 create_app, exception handler DomainError → HTTP, /health
+    schemas.py              Pydantic: entrada e saída
+    deps.py                 sessão por requisição e montagem dos services
+    routers/resources.py    /resources...
+    routers/bookings.py     /bookings/{id}
+```
+
+`domain/` não importa nada de SQLAlchemy nem FastAPI. `application/` depende só dos Protocols de `ports.py`. Só `infra/` sabe que existe um banco.
 
 ## Estratégia de concorrência
 
-Ver [ADR-0001](adr/0001-mecanismo-de-concorrencia.md) e [ADR-0002](adr/0002-postgres-desde-entrega-1.md). Resumo: `SELECT ... FOR UPDATE` no recurso serializa escritores concorrentes do mesmo recurso; uma `ExcludeConstraint` do Postgres na tabela `bookings` é a garantia estrutural final, independente de qualquer bug de aplicação.
+Ver [ADR-0001](adr/0001-mecanismo-de-concorrencia.md), [ADR-0002](adr/0002-postgres-desde-entrega-1.md) e [ADR-0005](adr/0005-invariantes-fora-de-r3.md).
+
+| Invariante | Mecanismo |
+|---|---|
+| R3 (sobreposição), na criação e na remarcação | `SELECT ... FOR UPDATE` na linha do recurso serializa os escritores do mesmo recurso; a `ExcludeConstraint` é a rede final |
+| R7 (cota) | `pg_advisory_xact_lock(hashtext(requester_email))` serializa só as tentativas do mesmo solicitante |
+| R4 (cancelar/remarcar só antes do início) | Pré-condição dentro do `UPDATE`, com o relógio do banco no momento da escrita (`clock_timestamp()`) |
+
+## Rastreabilidade requisito → teste
+
+| Requisito | Testes |
+|---|---|
+| RF1 | `integration/test_api_resources.py::TestCreateResource` |
+| RF2 | `integration/test_api_resources.py::TestListResources`, `TestGetResource` |
+| RF3 | `integration/test_api_bookings.py::TestAvailability`, `unit/test_booking_service.py::TestCheckAvailability`, `unit/test_rules.py::TestValidateQueryWindow` |
+| RF4 | `integration/test_api_bookings.py::TestCreateBooking`, `unit/test_booking_service.py::TestCreateBooking` |
+| RF5 | `integration/test_api_resources.py::TestListBookingsForResource` |
+| RF6 | `integration/test_api_bookings.py::TestGetBooking` |
+| RF7 | `integration/test_api_bookings.py::TestCancelBooking`, `unit/test_booking_service.py::TestCancelBooking` |
+| RF8 | `integration/test_api_bookings.py::TestRescheduleBooking`, `unit/test_booking_service.py::TestRescheduleBooking` |
+| R1, R2, R6 | `unit/test_rules.py::TestValidateTimeWindow` |
+| R3 | `unit/test_rules.py::TestOverlaps` + todos os testes de concorrência |
+| R4 | `unit/test_rules.py::TestEnsureCancellable`, `TestEnsureReschedulable`, `integration/test_write_time_preconditions.py` |
+| R7 | `unit/test_rules.py::TestCheckBookingQuota`, `concurrency/test_quota_race.py` |
+| RNF1 | `concurrency/test_double_booking.py`, `test_concurrent_different_resources.py`, `test_cancel_race.py`, `test_reschedule_race.py`, `test_quota_race.py` |
+| RNF3 | Asserções de `error_code` nos testes de integração; limites de tamanho em `TestCreateResource` |
+| RNF4 | `integration/test_db_constraints.py::TestExcludeConstraintIsTheFinalGuarantee` |
+
+## Limites conhecidos da v1.0.0
+
+- **Sem autenticação** ([ADR-0003](adr/0003-sem-autenticacao-nesta-entrega.md)): qualquer chamador age em nome de qualquer `requester_email`.
+- **Sem paginação** em `GET /resources` e `GET /resources/{id}/bookings`.
+- **Schema criado por `create_all`, sem migrações versionadas:** uma mudança de schema exigiria introduzir Alembic.
+- **Os ramos `except IntegrityError` dos repositórios** (a constraint barrando o que a checagem em Python deixou passar) não são exercitados pela suíte: o `FOR UPDATE` impede que o caso aconteça. A constraint em si é testada diretamente (RNF4).
 
 ## Refinamento
 
@@ -135,3 +223,5 @@ Registro de ajustes feitos na especificação/implementação a partir de testes
 9. **R4 era checado fora da seção crítica, na remarcação e no cancelamento** (achado pela revisão de IA no PR do RF8, e perdido pelas duas ferramentas do experimento comparativo, ver `docs/ai-comparativo.md`): `ensure_reschedulable`/`ensure_cancellable` rodam sobre uma leitura anterior ao lock, e os `UPDATE`s só filtravam `status = 'ACTIVE'`. Uma remarcação enfileirada atrás do lock do recurso podia mover uma reserva que já tinha começado, e o cancelamento tinha a mesma brecha desde a Sprint 1. A especificação de R4 passou a explicitar que **"ainda não começou" é verificado pela própria escrita, com o relógio do banco no momento da escrita**: os dois `UPDATE`s exigem `start_time > clock_timestamp()`, e `rowcount = 0` é resolvido para `BOOKING_ALREADY_CANCELLED` ou `BOOKING_ALREADY_STARTED`.
 
    A primeira correção passava para o `UPDATE` um `now` lido na aplicação *antes* do lock. A segunda rodada de revisão mostrou que isso só repetia a checagem com um valor velho. `now()` do Postgres também não serve, porque devolve o início da transação, que começa antes do lock; `clock_timestamp()` devolve a hora real de execução da instrução. Provado por `tests/integration/test_write_time_preconditions.py` (cada teste falha se a condição correspondente for removida). A mesma revisão apontou que o item 8 afirmava como "provado" o comportamento contra cancelamento concorrente sem teste nenhum; o teste foi adicionado (`test_reschedule_racing_cancel_never_moves_a_cancelled_booking`).
+
+10. **Tamanho de `name`/`location` não fazia parte do contrato** (achado ao conferir o modelo de dados contra a API para este documento As-Built): as colunas são `varchar(120)` e `varchar(255)`, mas o schema de entrada aceitava qualquer tamanho, e um valor maior chegava ao Postgres como `StringDataRightTruncation` não tratado (500, violando RNF3). O contrato de `Resource` passou a declarar os limites, e o schema os valida (422).

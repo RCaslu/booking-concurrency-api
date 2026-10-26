@@ -59,6 +59,17 @@ O RF8 foi implementado duas vezes, uma pelo Claude Code e outra pelo Cursor, a p
 | R4 e RF8: "só se a reserva está ACTIVE e ainda não começou" | A regra estava certa, mas *onde* e *com qual relógio* ela é verificada importa: fora do lock, ou com um horário lido antes do lock, ela não vale sob concorrência | Item 9 do Refinamento: **"ainda não começou" é verificado pela própria escrita, com o relógio do banco no momento da escrita**, na remarcação e no cancelamento |
 | Item 8 do Refinamento: comportamento com cancelamento concorrente "provado" | Não havia teste | O teste foi escrito; a afirmação do spec passou a ter evidência |
 
+## Sprint 3 (Entrega 3)
+
+Na Sprint 3 entraram dois mecanismos de detecção novos: o **relatório de cobertura** e a **conferência do modelo de dados contra o contrato** feita para escrever o spec As-Built.
+
+| # | Erro | Detecção | Causa raiz | Correção | Regressão coberta por |
+|---|---|---|---|---|---|
+| E14 | `POST /resources` com `name` acima de 120 caracteres (ou `location` acima de 255) respondia **500** | Conferência do modelo de dados contra o contrato (spec As-Built) | O limite existia só na coluna (`varchar`); o schema de entrada aceitava qualquer tamanho, e o erro do Postgres não era tratado | `Field(max_length=...)` no schema, com os mesmos limites das colunas ([`ec4d807`](https://github.com/RCaslu/booking-concurrency-api/commit/ec4d807)) | `test_create_resource_with_name_longer_than_column_returns_422` e `..._location_...` |
+| E15 | RF5 (`GET /resources/{id}/bookings`) **sem nenhum teste**; RF6 só com o caso 404; `/health` sem teste; a `ExcludeConstraint` (RNF4) nunca testada diretamente | Relatório de cobertura (`pytest-cov`) | Os testes cresceram guiados pelos casos difíceis (concorrência), e os caminhos simples ficaram sem teste | Testes adicionados; cobertura de 96% para 98% ([`f503b99`](https://github.com/RCaslu/booking-concurrency-api/commit/f503b99)) | `TestListBookingsForResource`, `TestGetBooking`, `TestHealth`, `test_db_constraints.py` |
+
+E14 é mais um caso do padrão "o spec não dizia, e o código fez uma escolha implícita": o limite de tamanho existia no banco, mas não no contrato. O spec As-Built agora declara os limites (Refinamento, item 10).
+
 ## Padrão observado
 
 Os erros mais graves (E4, E5 e, na Sprint 2, E10 e E13) seguiram a mesma forma: **checar e depois agir sem atomicidade**. Depois de aparecer duas vezes, o padrão virou critério explícito de revisão: toda operação que lê um estado e decide com base nele precisa de lock ou de uma escrita condicional. O critério de aceitação do RF8 (issue #8) já exigia segurança sob concorrência desde o início, e mesmo assim as duas ferramentas reproduziram o padrão em E10. Isso mostra que escrever o critério na especificação não basta: ele precisa ser verificado na revisão.
