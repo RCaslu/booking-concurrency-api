@@ -89,6 +89,14 @@ class TestCreateBooking:
 
 
 class TestGetBooking:
+    def test_get_existing_booking_returns_200(self, client, resource_id, future_slot):
+        created = client.post(f"/resources/{resource_id}/bookings", json=_booking_payload(future_slot)).json()
+
+        response = client.get(f"/bookings/{created['id']}")
+
+        assert response.status_code == 200
+        assert response.json() == created
+
     def test_get_unknown_booking_returns_404(self, client):
         response = client.get(f"/bookings/{uuid4()}")
 

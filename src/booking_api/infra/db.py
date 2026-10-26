@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from booking_api.config import settings
 
@@ -17,6 +17,3 @@ def build_engine(database_url: str, pool_size: int = 20, max_overflow: int = 10)
 engine = build_engine(settings.database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-
-def get_session() -> Session:
-    return SessionLocal()
