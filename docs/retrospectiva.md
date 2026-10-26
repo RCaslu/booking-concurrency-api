@@ -6,7 +6,7 @@ Avaliação final das três sprints (Entregas 1 a 3). Trabalho individual, entã
 
 | | Sprint 1 | Sprint 2 | Sprint 3 | Total |
 |---|---|---|---|---|
-| Testes automatizados | 69 | 91 | 100 | **100, todos passando** |
+| Testes automatizados | 69 | 91 | 102 | **102, todos passando** |
 | Cobertura de código | n/a | n/a | 98% | **98%** |
 | Erros encontrados antes do merge ([relatório](erros-e-reespecificacao.md)) | 9 | 4 | 2 | **15** |
 | ...encontrados pela revisão de IA (skill `code-review`) | 7 | 3 | 0 | 10 |
@@ -29,7 +29,7 @@ Avaliação final das três sprints (Entregas 1 a 3). Trabalho individual, entã
 
 O ganho real foi na **parte mecânica**: estrutura em camadas, testes de integração repetitivos, documentação e diagramas saíram rápido. O tempo economizado ali foi gasto em outro lugar, e esse é o resultado mais honesto do projeto: **revisar ficou mais caro, não mais barato.** Código gerado em minutos ainda exigiu ler o diff contra o spec, rodar contra o banco real, testar concorrência de verdade e uma segunda rodada de revisão quando a primeira correção estava errada.
 
-Mesmo assim, o saldo foi claramente positivo. Um projeto com garantia de concorrência provada por teste, 100 testes, 98% de cobertura, 5 ADRs e 15 erros documentados não caberia no prazo sem os agentes. Mas só se sustentou porque a verificação foi tratada como parte do trabalho, não como etapa opcional.
+Mesmo assim, o saldo foi claramente positivo. Um projeto com garantia de concorrência provada por teste, 102 testes, 98% de cobertura, 5 ADRs e 15 erros documentados não caberia no prazo sem os agentes. Mas só se sustentou porque a verificação foi tratada como parte do trabalho, não como etapa opcional.
 
 ## Principais dificuldades superadas
 
