@@ -9,9 +9,11 @@ Registro consolidado de todo erro encontrado durante o desenvolvimento: como foi
 | Suíte rodando contra Postgres real (Docker) | E1, E3 | Nenhum dos dois apareceria com SQLite ou mocks |
 | Revisão de IA (skill `code-review`) antes de cada PR | E2, E4, E5, E6, E7, E9, E10, E13 | Os achados mais graves (E4, E5, E10, E13) eram races que os testes da época **não** cobriam |
 | Revisão de IA cruzando a documentação com o código | E8, E11 | O spec prometia ou afirmava algo que o código ou os testes não tinham |
-| Leitura humana do código contra o contrato (experimento comparativo) | E12 | Os testes estavam verdes; o erro estava na mensagem do contrato | O spec prometia um comportamento que o código não tinha |
+| Leitura humana do código contra o contrato (experimento comparativo) | E12 | Os testes estavam verdes; o erro estava na mensagem do contrato |
+| Conferência do modelo de dados contra o contrato (spec As-Built) | E14 | O limite existia no banco, mas não no contrato da API |
+| Relatório de cobertura (`pytest-cov`) | E15 | Caminhos simples sem teste nenhum, escondidos atrás de uma suíte grande e verde |
 
-Nenhum erro introduzido nas branches de feature chegou à `develop`: todos foram corrigidos antes do merge. A exceção é E13, uma brecha do cancelamento que existia desde a Sprint 1 e só foi encontrada na Sprint 2.
+Todo erro **encontrado** numa branch de feature foi corrigido antes do merge. Mas três erros chegaram à `main` sem ser vistos e só foram encontrados depois: E13 (brecha no cancelamento, da Sprint 1, achada na Sprint 2), E14 (500 por campo acima do limite, da Sprint 1, achado na Sprint 3) e E15 (requisitos sem teste, achados pela cobertura na Sprint 3). Nenhum processo de revisão pega tudo; a cobertura e a conferência do spec contra o código pegaram o que a revisão de diff não pegou.
 
 ## Sprint 1 (Entrega 1)
 
@@ -58,6 +60,17 @@ O RF8 foi implementado duas vezes, uma pelo Claude Code e outra pelo Cursor, a p
 |---|---|---|
 | R4 e RF8: "só se a reserva está ACTIVE e ainda não começou" | A regra estava certa, mas *onde* e *com qual relógio* ela é verificada importa: fora do lock, ou com um horário lido antes do lock, ela não vale sob concorrência | Item 9 do Refinamento: **"ainda não começou" é verificado pela própria escrita, com o relógio do banco no momento da escrita**, na remarcação e no cancelamento |
 | Item 8 do Refinamento: comportamento com cancelamento concorrente "provado" | Não havia teste | O teste foi escrito; a afirmação do spec passou a ter evidência |
+
+## Sprint 3 (Entrega 3)
+
+Na Sprint 3 entraram dois mecanismos de detecção novos: o **relatório de cobertura** e a **conferência do modelo de dados contra o contrato** feita para escrever o spec As-Built.
+
+| # | Erro | Detecção | Causa raiz | Correção | Regressão coberta por |
+|---|---|---|---|---|---|
+| E14 | `POST /resources` com `name` acima de 120 caracteres, `location` acima de 255 ou `capacity` acima do limite de `integer` respondia **500**; `name` vazio era aceito | Conferência do modelo de dados contra o contrato (spec As-Built) | O limite existia só na coluna; o schema de entrada não tinha limite, e o erro do Postgres não era tratado. A primeira correção cobriu só os textos; a revisão de IA do PR apontou `capacity` e `name` vazio | `Field(min_length=..., max_length=..., le=...)` no schema, com os mesmos limites das colunas ([`ec4d807`](https://github.com/RCaslu/booking-concurrency-api/commit/ec4d807)) | Quatro testes em `TestCreateResource` (nome vazio, nome longo, localização longa, capacidade acima do `integer`) |
+| E15 | RF5 (`GET /resources/{id}/bookings`) **sem nenhum teste**; RF6 só com o caso 404; `/health` sem teste; a `ExcludeConstraint` (RNF4) nunca testada diretamente | Relatório de cobertura (`pytest-cov`) | Os testes cresceram guiados pelos casos difíceis (concorrência), e os caminhos simples ficaram sem teste | Testes adicionados; cobertura de 96% para 98% ([`f503b99`](https://github.com/RCaslu/booking-concurrency-api/commit/f503b99)) | `TestListBookingsForResource`, `TestGetBooking`, `TestHealth`, `test_db_constraints.py` |
+
+E14 é mais um caso do padrão "o spec não dizia, e o código fez uma escolha implícita": o limite de tamanho existia no banco, mas não no contrato. O spec As-Built agora declara os limites (Refinamento, item 10).
 
 ## Padrão observado
 
