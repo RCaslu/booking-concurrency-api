@@ -57,8 +57,8 @@ Todas as datas em ISO-8601, **obrigatoriamente com timezone** (UTC recomendado).
 | Campo | Tipo | Regras de entrada (`POST`) |
 |---|---|---|
 | `id` | uuid | gerado |
-| `name` | string | obrigatório, até 120 caracteres; não precisa ser único |
-| `capacity` | int | obrigatório, `> 0` |
+| `name` | string | obrigatório, de 1 a 120 caracteres; não precisa ser único |
+| `capacity` | int | obrigatório, de 1 a 2.147.483.647 (limite do `integer` do Postgres) |
 | `location` | string \| null | opcional, até 255 caracteres |
 | `created_at` | datetime | gerado pelo banco |
 
@@ -115,7 +115,7 @@ Há **dois** formatos, e a diferença é intencional:
 { "error_code": "OVERLAPPING_BOOKING", "message": "Resource is already booked for part of this time window.", "details": null }
 ```
 
-**Erro de validação de payload** (tipo errado, campo ausente, e-mail inválido, `capacity <= 0`, texto acima do limite, UUID inválido na rota): formato padrão do FastAPI, status 422:
+**Erro de validação de payload** (tipo errado, campo ausente, e-mail inválido, `capacity` fora da faixa, `name` vazio, texto acima do limite, UUID inválido na rota): formato padrão do FastAPI, status 422:
 
 ```json
 { "detail": [ { "type": "greater_than", "loc": ["body", "capacity"], "msg": "Input should be greater than 0", "input": 0 } ] }
@@ -188,9 +188,11 @@ Ver [ADR-0001](adr/0001-mecanismo-de-concorrencia.md), [ADR-0002](adr/0002-postg
 | R1, R2, R6 | `unit/test_rules.py::TestValidateTimeWindow` |
 | R3 | `unit/test_rules.py::TestOverlaps` + todos os testes de concorrência |
 | R4 | `unit/test_rules.py::TestEnsureCancellable`, `TestEnsureReschedulable`, `integration/test_write_time_preconditions.py` |
+| R5 | `integration/test_api_bookings.py::TestCreateBooking::test_create_booking_for_unknown_resource_returns_404`, `integration/test_api_resources.py::TestListBookingsForResource::test_unknown_resource_returns_404`, `unit/test_booking_service.py::TestCreateBooking::test_raises_when_resource_does_not_exist` |
 | R7 | `unit/test_rules.py::TestCheckBookingQuota`, `concurrency/test_quota_race.py` |
 | RNF1 | `concurrency/test_double_booking.py`, `test_concurrent_different_resources.py`, `test_cancel_race.py`, `test_reschedule_race.py`, `test_quota_race.py` |
-| RNF3 | Asserções de `error_code` nos testes de integração; limites de tamanho em `TestCreateResource` |
+| RNF2 | Não é um teste de unidade: o próprio harness roda em container (`docker compose run --rm --build test`), e o CI repete a suíte num ambiente limpo a cada PR |
+| RNF3 | Asserções de `error_code` nos testes de integração; limites de campo em `TestCreateResource` |
 | RNF4 | `integration/test_db_constraints.py::TestExcludeConstraintIsTheFinalGuarantee` |
 
 ## Limites conhecidos da v1.0.0
@@ -199,6 +201,7 @@ Ver [ADR-0001](adr/0001-mecanismo-de-concorrencia.md), [ADR-0002](adr/0002-postg
 - **Sem paginação** em `GET /resources` e `GET /resources/{id}/bookings`.
 - **Schema criado por `create_all`, sem migrações versionadas:** uma mudança de schema exigiria introduzir Alembic.
 - **Os ramos `except IntegrityError` dos repositórios** (a constraint barrando o que a checagem em Python deixou passar) não são exercitados pela suíte: o `FOR UPDATE` impede que o caso aconteça. A constraint em si é testada diretamente (RNF4).
+- **O ramo de `cancel()` em que o `UPDATE` condicional perde a corrida** (`rowcount = 0` com status já `CANCELLED`) só é executado quando o timing do teste de concorrência leva a esse caminho. Na maioria das execuções, os `DELETE` perdedores são barrados antes, pela checagem de domínio. O resultado observável (exatamente um 200) é testado de forma determinística; a cobertura dessa linha específica varia entre execuções.
 
 ## Refinamento
 
@@ -224,4 +227,4 @@ Registro de ajustes feitos na especificação/implementação a partir de testes
 
    A primeira correção passava para o `UPDATE` um `now` lido na aplicação *antes* do lock. A segunda rodada de revisão mostrou que isso só repetia a checagem com um valor velho. `now()` do Postgres também não serve, porque devolve o início da transação, que começa antes do lock; `clock_timestamp()` devolve a hora real de execução da instrução. Provado por `tests/integration/test_write_time_preconditions.py` (cada teste falha se a condição correspondente for removida). A mesma revisão apontou que o item 8 afirmava como "provado" o comportamento contra cancelamento concorrente sem teste nenhum; o teste foi adicionado (`test_reschedule_racing_cancel_never_moves_a_cancelled_booking`).
 
-10. **Tamanho de `name`/`location` não fazia parte do contrato** (achado ao conferir o modelo de dados contra a API para este documento As-Built): as colunas são `varchar(120)` e `varchar(255)`, mas o schema de entrada aceitava qualquer tamanho, e um valor maior chegava ao Postgres como `StringDataRightTruncation` não tratado (500, violando RNF3). O contrato de `Resource` passou a declarar os limites, e o schema os valida (422).
+10. **Limites das colunas não faziam parte do contrato** (achado ao conferir o modelo de dados contra a API para este documento As-Built, e completado pela revisão de IA do PR): `name` é `varchar(120)`, `location` é `varchar(255)` e `capacity` é `integer` (até 2.147.483.647), mas o schema de entrada não tinha nenhum desses limites. Um valor acima chegava ao Postgres como `StringDataRightTruncation` ou `NumericValueOutOfRange` não tratado (500, violando RNF3). Além disso, `name` vazio era aceito, embora o contrato o declarasse obrigatório. O contrato de `Resource` passou a declarar todos esses limites, e o schema os valida (422).

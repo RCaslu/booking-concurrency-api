@@ -8,8 +8,8 @@ from pydantic import BaseModel, EmailStr, Field
 
 
 class ResourceCreate(BaseModel):
-    name: str = Field(max_length=120)
-    capacity: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=120)
+    capacity: int = Field(gt=0, le=2_147_483_647)
     location: str | None = Field(default=None, max_length=255)
 
 

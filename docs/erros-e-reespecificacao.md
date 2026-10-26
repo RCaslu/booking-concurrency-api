@@ -13,7 +13,7 @@ Registro consolidado de todo erro encontrado durante o desenvolvimento: como foi
 | Conferência do modelo de dados contra o contrato (spec As-Built) | E14 | O limite existia no banco, mas não no contrato da API |
 | Relatório de cobertura (`pytest-cov`) | E15 | Caminhos simples sem teste nenhum, escondidos atrás de uma suíte grande e verde |
 
-Nenhum erro introduzido nas branches de feature chegou à `develop`: todos foram corrigidos antes do merge. A exceção é E13, uma brecha do cancelamento que existia desde a Sprint 1 e só foi encontrada na Sprint 2.
+Todo erro **encontrado** numa branch de feature foi corrigido antes do merge. Mas três erros chegaram à `main` sem ser vistos e só foram encontrados depois: E13 (brecha no cancelamento, da Sprint 1, achada na Sprint 2), E14 (500 por campo acima do limite, da Sprint 1, achado na Sprint 3) e E15 (requisitos sem teste, achados pela cobertura na Sprint 3). Nenhum processo de revisão pega tudo; a cobertura e a conferência do spec contra o código pegaram o que a revisão de diff não pegou.
 
 ## Sprint 1 (Entrega 1)
 
@@ -67,7 +67,7 @@ Na Sprint 3 entraram dois mecanismos de detecção novos: o **relatório de cobe
 
 | # | Erro | Detecção | Causa raiz | Correção | Regressão coberta por |
 |---|---|---|---|---|---|
-| E14 | `POST /resources` com `name` acima de 120 caracteres (ou `location` acima de 255) respondia **500** | Conferência do modelo de dados contra o contrato (spec As-Built) | O limite existia só na coluna (`varchar`); o schema de entrada aceitava qualquer tamanho, e o erro do Postgres não era tratado | `Field(max_length=...)` no schema, com os mesmos limites das colunas ([`ec4d807`](https://github.com/RCaslu/booking-concurrency-api/commit/ec4d807)) | `test_create_resource_with_name_longer_than_column_returns_422` e `..._location_...` |
+| E14 | `POST /resources` com `name` acima de 120 caracteres, `location` acima de 255 ou `capacity` acima do limite de `integer` respondia **500**; `name` vazio era aceito | Conferência do modelo de dados contra o contrato (spec As-Built) | O limite existia só na coluna; o schema de entrada não tinha limite, e o erro do Postgres não era tratado. A primeira correção cobriu só os textos; a revisão de IA do PR apontou `capacity` e `name` vazio | `Field(min_length=..., max_length=..., le=...)` no schema, com os mesmos limites das colunas ([`ec4d807`](https://github.com/RCaslu/booking-concurrency-api/commit/ec4d807)) | Quatro testes em `TestCreateResource` (nome vazio, nome longo, localização longa, capacidade acima do `integer`) |
 | E15 | RF5 (`GET /resources/{id}/bookings`) **sem nenhum teste**; RF6 só com o caso 404; `/health` sem teste; a `ExcludeConstraint` (RNF4) nunca testada diretamente | Relatório de cobertura (`pytest-cov`) | Os testes cresceram guiados pelos casos difíceis (concorrência), e os caminhos simples ficaram sem teste | Testes adicionados; cobertura de 96% para 98% ([`f503b99`](https://github.com/RCaslu/booking-concurrency-api/commit/f503b99)) | `TestListBookingsForResource`, `TestGetBooking`, `TestHealth`, `test_db_constraints.py` |
 
 E14 é mais um caso do padrão "o spec não dizia, e o código fez uma escolha implícita": o limite de tamanho existia no banco, mas não no contrato. O spec As-Built agora declara os limites (Refinamento, item 10).
