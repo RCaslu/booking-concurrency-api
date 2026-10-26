@@ -141,6 +141,8 @@ Com a API rodando, o script abaixo executa o fluxo principal contra o servidor r
 ./scripts/demo.sh            # N=50 ./scripts/demo.sh para mais requisições simultâneas
 ```
 
+Se o cadastro da sala responder 500 numa máquina que já rodou uma versão antiga do projeto, o volume `pgdata` guarda um schema velho: o schema é criado com `create_all`, que não altera tabelas existentes (ver "Limites conhecidos" no [spec](docs/spec.md#limites-conhecidos-da-v100)). Recrie com `docker compose down -v`.
+
 ## Governança e histórico
 
 - **Branches:** `main` (protegida por conduta) ← `develop` ← `feature/*`. Nenhum commit direto em `main`.

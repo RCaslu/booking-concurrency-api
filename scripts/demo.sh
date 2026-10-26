@@ -20,7 +20,7 @@ LATER=$(iso 27)
 LATER_END=$(iso 28)
 
 step "1. API no ar"
-call "$API/health"
+call "$API/health" || { echo "falha: a API nao respondeu em $API. Suba com: docker compose up -d --wait api" >&2; exit 1; }
 
 step "2. Cadastrar uma sala"
 RESOURCE=$(curl -s -X POST "$API/resources" -H 'Content-Type: application/json' \
